@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data:; media-src 'self' file:; style-src 'self' 'unsafe-inline'">
+<title>KORA Studio</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<header>
+  <div class="brand"><img src="../build/icon.png" alt=""><b>KORA Studio</b></div>
+  <div class="proj">Projet sans titre</div>
+  <div class="hr">
+    <button class="ib" id="bUndo" title="Annuler (Ctrl+Z)" aria-label="Annuler"><i data-i="undo"></i></button>
+    <button class="ib" id="bRedo" title="Rétablir (Ctrl+Y)" aria-label="Rétablir"><i data-i="redo"></i></button>
+    <button class="btn pri" id="bExport"><i data-i="download"></i>Exporter</button>
+  </div>
+</header>
+<div id="work">
+  <aside id="lib">
+    <div class="ph"><span>Médias</span><button class="btn sm" id="bImport"><i data-i="upload"></i>Importer</button></div>
+    <div class="seg" id="flt"><button data-f="all" class="on">Tout</button><button data-f="video">Vidéos</button><button data-f="image">Images</button><button data-f="audio">Audios</button></div>
+    <div id="grid"></div>
+  </aside>
+  <section id="stage">
+    <div id="screen"><video id="pv" hidden></video><img id="pi" alt="" hidden><div id="empty"></div></div>
+    <div class="transport">
+      <span id="tc" class="tc">00:00.0</span>
+      <button class="ib" id="bBack" aria-label="Début"><i data-i="skipb"></i></button>
+      <button class="ib play" id="bPlay" aria-label="Lecture (Espace)"><i data-i="play"></i></button>
+      <button class="ib" id="bFwd" aria-label="Fin"><i data-i="skipf"></i></button>
+      <span id="tt" class="tc dim">/ 00:00.0</span>
+    </div>
+  </section>
+  <aside id="insp"><div class="ph"><span>Inspecteur</span></div><div id="ibody"></div></aside>
+</div>
+<section id="tl">
+  <div class="tbar">
+    <button class="btn" id="bCut"><i data-i="scissors"></i>Couper<kbd>C</kbd></button>
+    <button class="btn" id="bDup"><i data-i="copy"></i>Dupliquer</button>
+    <button class="btn" id="bDel"><i data-i="trash"></i>Supprimer<kbd>Suppr</kbd></button>
+    <span class="sep"></span>
+    <button class="ib" id="bLeft" aria-label="Déplacer à gauche"><i data-i="left"></i></button>
+    <button class="ib" id="bRight" aria-label="Déplacer à droite"><i data-i="right"></i></button>
+    <span class="grow"></span><span class="dim">Zoom</span><input type="range" id="zoom" min="10" max="140" value="40" aria-label="Zoom de la timeline">
+  </div>
+  <div class="tgrid">
+    <div class="heads"><div class="corner"></div><div class="head v"><i data-i="film"></i>Vidéo</div><div class="head a"><i data-i="music"></i>Audio</div></div>
+    <div id="scroll"><div id="content">
+      <div id="ruler"></div>
+      <div id="lanes"><div class="lane v" id="lV"></div><div class="lane a" id="lA"></div></div>
+      <div id="playhead"><div class="knob"></div></div>
+    </div></div>
+  </div>
+</section>
+<div id="modal" hidden><div class="dlg">
+  <h3>Exporter</h3>
+  <div id="mSet">
+    <p class="dim" id="sum"></p>
+    <label id="resRow">Résolution<select id="res"><option value="720">720p HD</option><option value="1080">1080p Full HD</option><option value="480">480p</option></select></label>
+    <div class="end"><button class="btn" id="mCancel">Annuler</button><button class="btn pri" id="mGo">Choisir l'emplacement…</button></div>
+  </div>
+  <div id="mProg" hidden><p id="pt">Export en cours…</p><div class="bar"><div id="bar"></div></div><div class="end"><button class="btn" id="pCancel">Annuler l'export</button></div></div>
+</div></div>
+<div id="toast" hidden></div>
+<script src="app.js"></script>
+</body></html>
