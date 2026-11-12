@@ -27,7 +27,7 @@ const DEF = { vol: 1, mute: false, fi: 0, fo: 0, speed: 1, bright: 0, contrast: 
 
 const S = { lib: [], visual: [], audio: [], text: [], sel: null, undo: [], redo: [], scale: 40, flt: 'all' };
 let T = 0, playing = false, last = 0, raf = 0, uid = 1;
-const pv = $('#pv'), pi = $('#pi'), pa = new Audio(), cv = $('#tcv');
+const pv = $('#pv'), pi = $('#pi'), pa = new Audio(), pr = new Audio(), cv = $('#tcv');
 const nid = () => 'c' + uid++;
 const spd = c => c.speed || 1;
 const len = c => c.type === 'text' ? c.dur : (c.end - c.start) / spd(c);
@@ -133,7 +133,7 @@ const SPEC = {
     ['Style', [R('size', 'Taille', 2, 30, .5, 1, ' %'), { y: 'k', k: 'color', l: 'Couleur' }, { y: 'f' }, C('bold', 'Gras'), C('outline', 'Contour noir'), C('box', 'Fond sombre')]],
     ['Position', [R('x', 'Horizontale', 0, 100, 1, 1, ' %'), R('y', 'Verticale', 0, 100, 1, 1, ' %'), { y: 'i', l: 'Astuce : tu peux aussi glisser le texte directement dans l\'aperçu.' }]],
     ['Animation', [A('anim', TANIMS)]]],
-  video: [['Découpe', [N('start', 'Début (s)', .1), N('end', 'Fin (s)', .1)]], ['Vitesse', [SEL('speed', 'Vitesse de lecture', SPEEDS)]], ...AUDIO, ...COLOR],
+  video: [['Découpe', [N('start', 'Début (s)', .1), N('end', 'Fin (s)', .1)]], ['Vitesse', [SEL('speed', 'Vitesse de lecture', SPEEDS)]], ...AUDIO, ['Remplacer le son', [{ y: 'snd' }]], ...COLOR],
   audio: [['Découpe', [N('start', 'Début (s)', .1), N('end', 'Fin (s)', .1)]], ...AUDIO],
   image: [['Durée', [N('end', 'Durée (s)', .5)]], ['Cadrage', [A('fit', [['contain', 'Contenir'], ['cover', 'Remplir']])]], ['Animation', [A('anim', IANIMS, 'three')]], ...COLOR]
 };
@@ -155,6 +155,7 @@ function item(x) {
     case 's': return `<label>${l}<select data-k="${x.k}">${x.opts.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('')}</select></label>`;
     case 'a': return `<div class="anims ${x.cls}">${x.list.map(a => `<button class="an" data-k="${x.k}" data-v="${a[0]}">${a[1]}</button>`).join('')}</div>`;
     case 'b': return `<button class="ghostb" data-act="resetcol">${x.l}</button>`;
+    case 'snd': return '<div id="sndBox" class="sec"></div>';
     case 'i': return `<div class="hint2">${x.l}</div>`;
   }
   return '';
@@ -179,6 +180,21 @@ function renderInsp() {
     el.value = c[k]; // texte, couleur
     el.oninput = () => { if (!el._s) { snap(); el._s = 1; } c[k] = el.value; if (k === 'text') renderTL(); showFrame(); };
   });
+  const box = b.querySelector('#sndBox');
+  if (box) {
+    box.innerHTML = c.sound
+      ? '<div class="dim">Nouveau son : <b class="sn"></b></div><label><span>Début dans le fichier son (s)</span><input type="number" id="sS" min="0" step="0.1"></label><button class="ghostb" id="sRm">Rétablir le son d\'origine</button>'
+      : '<button class="ghostb" id="sAdd">Remplacer le son…</button><div class="hint2">Remplace le son de cette vidéo par un fichier audio de ton choix.</div>';
+    if (c.sound) {
+      box.querySelector('.sn').textContent = c.sound.name; $('#sS').value = (c.sound.start || 0).toFixed(1);
+      $('#sS').onchange = e => { snap(); c.sound.start = Math.max(0, Math.min(+e.target.value || 0, c.sound.src - .1)); renderAll(); };
+      $('#sRm').onclick = () => { snap(); delete c.sound; renderAll(); };
+    } else $('#sAdd').onclick = async () => {
+      const ps = await kora.pick(); if (!ps.length) return;
+      const i = await kora.probe(ps[0]); if (i.error || !i.hasAudio) return toast('Ce fichier ne contient pas de son');
+      snap(); c.sound = { path: ps[0], name: ps[0].split(/[\\/]/).pop(), src: i.duration, start: 0 }; renderAll();
+    };
+  }
   const rb = b.querySelector('[data-act=resetcol]'); if (rb) rb.onclick = () => { snap(); Object.assign(c, { bright: 0, contrast: 1, sat: 1 }); renderAll(); };
 }
 
@@ -240,8 +256,15 @@ function showFrame() {
       else if (Math.abs(pv.currentTime - want) > (playing ? .35 : .04)) pv.currentTime = want;
       pv.playbackRate = spd(c); pv.volume = c.mute ? 0 : Math.min(1, (c.vol ?? 1) * fadeVol(c, T, v.s, v.e)); pv.style.filter = cssFilter(c);
       if (playing) { if (pv.paused) pv.play().catch(() => {}); } else pv.pause();
+      if (c.sound) {
+        pv.muted = true; const w2 = (c.sound.start || 0) + tl;
+        if (pr._p !== c.sound.path) { pr._p = c.sound.path; pr.src = url(c.sound.path); pr.currentTime = w2; }
+        else if (Math.abs(pr.currentTime - w2) > (playing ? .35 : .04)) pr.currentTime = w2;
+        pr.volume = pv.volume; if (playing) { if (pr.paused) pr.play().catch(() => {}); } else pr.pause();
+      } else pv.muted = false;
     }
   }
+  if (!(v && v.c.type === 'video' && v.c.sound)) { pr.pause(); pv.muted = false; }
   const a = at('audio', T);
   if (!a) pa.pause(); else {
     const want = a.c.start + (T - a.s);
@@ -269,7 +292,7 @@ cv.onpointerdown = e => {
 };
 
 function play() { if (!total()) return toast('Ajoute des clips à la timeline'); if (T >= total() - 0.05) T = 0; playing = true; last = performance.now(); $('#bPlay').innerHTML = ico('pause'); raf = requestAnimationFrame(tick); }
-function pause() { playing = false; cancelAnimationFrame(raf); pv.pause(); pa.pause(); $('#bPlay').innerHTML = ico('play'); }
+function pause() { playing = false; cancelAnimationFrame(raf); pv.pause(); pa.pause(); pr.pause(); $('#bPlay').innerHTML = ico('play'); }
 function tick(ts) {
   if (!playing) return; T += (ts - last) / 1000; last = ts;
   if (T >= total()) { T = total(); pause(); showFrame(); updHead(); return; }

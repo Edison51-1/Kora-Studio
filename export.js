@@ -69,7 +69,10 @@ function buildArgs(p, out) {
       const sp = c.speed || 1;
       a.push('-ss', String(c.start), '-t', String(+(c.end - c.start).toFixed(3)), '-i', c.path);
       f.push(`[${k}:v]setpts=(PTS-STARTPTS)/${sp},${FIT}${eqf(c)}[v${i}]`);
-      f.push(c.hasAudio
+      if (c.sound && c.sound.path) {
+        k++; a.push('-ss', String(c.sound.start || 0), '-t', String(d), '-i', c.sound.path);
+        f.push(`[${k}:a]${AF},apad,atrim=0:${d},asetpts=PTS-STARTPTS,${afx(c, d)}[a${i}]`);
+      } else f.push(c.hasAudio
         ? `[${k}:a]${AF}${sp !== 1 ? `,atempo=${sp}` : ''},${afx(c, d)}[a${i}]`
         : `anullsrc=r=44100:cl=stereo:d=${d}[a${i}]`);
     } else {

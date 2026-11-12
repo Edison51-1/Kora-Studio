@@ -5,6 +5,7 @@
 ## Fonctionnalités
 - Import de vidéos, images et audios (bouton ou glisser-déposer), timeline avec règle, tête de lecture et zoom
 - **Textes** posés à n'importe quel moment : police, taille, couleur, contour, fond, position (glisser dans l'aperçu), animation d'entrée
+- **Remplacer le son d'une vidéo** par un autre fichier audio
 - **Son réglable partout** : volume (jusqu'à 200 %), coupure du son, fondus entrant/sortant ; coupe un clip en morceaux pour régler chaque partie
 - **18 animations d'images** au choix : zooms, panoramiques, Ken Burns, pulsation, fondus, glissements, rotation, tremblement
 - Vitesse des vidéos (0,5× à 2×), luminosité, contraste, saturation, cadrage des images (contenir / remplir)
