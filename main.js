@@ -1,13 +1,15 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const { spawn, execFile } = require('child_process');
+const fs = require('fs');
+const os = require('os');
 const { buildArgs } = require('./export');
 
 const fix = p => p.replace('app.asar' + path.sep, 'app.asar.unpacked' + path.sep);
 const FFMPEG = fix(require('ffmpeg-static'));
 const FFPROBE = fix(require('ffprobe-static').path);
 const IMG = /\.(png|jpe?g|webp|bmp|gif)$/i;
-let win, job = null;
+let win, job = null, projPath = null;
 
 function createWindow() {
   win = new BrowserWindow({
@@ -40,28 +42,48 @@ ipcMain.handle('probe', (_, file) => new Promise(resolve => {
   });
 }));
 
-ipcMain.handle('save', async (_, ext) => {
+ipcMain.handle('save', async (_, ext, name) => {
   const r = await dialog.showSaveDialog(win, {
-    defaultPath: 'kora-export.' + ext,
+    defaultPath: (name || 'kora-export') + '.' + ext,
     filters: ext === 'mp4' ? [{ name: 'Vidéo MP4', extensions: ['mp4'] }] : [{ name: 'Audio', extensions: ['mp3', 'm4a', 'wav'] }]
   });
-  return r.canceled ? null : r.filePath;
+  if (r.canceled) return null;
+  return /\.(mp4|mp3|m4a|wav)$/i.test(r.filePath) ? r.filePath : r.filePath + '.' + ext;
 });
 
 ipcMain.handle('export', (_, project, out) => new Promise(resolve => {
-  let plan;
-  try { plan = buildArgs(project, out); } catch (e) { return resolve({ ok: false, error: e.message }); }
+  let plan, tmp = null;
+  try {
+    if ((project.text || []).length) {
+      tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kora-'));
+      project.text.forEach((t, i) => { t.pngPath = path.join(tmp, 't' + i + '.png'); fs.writeFileSync(t.pngPath, Buffer.from(t.png.split(',')[1], 'base64')); });
+    }
+    plan = buildArgs(project, out);
+  } catch (e) { if (tmp) fs.rmSync(tmp, { recursive: true, force: true }); return resolve({ ok: false, error: e.message }); }
   let tail = '';
   job = spawn(FFMPEG, plan.args);
+  const clean = () => { if (tmp) fs.rmSync(tmp, { recursive: true, force: true }); };
   job.stderr.on('data', d => {
     const s = d.toString(); tail = (tail + s).slice(-1500);
     const m = [...s.matchAll(/time=(\d+):(\d+):(\d+\.?\d*)/g)].pop();
     if (m && plan.total) win.webContents.send('progress', Math.min(1, (+m[1] * 3600 + +m[2] * 60 + +m[3]) / plan.total));
   });
-  job.on('error', e => resolve({ ok: false, error: e.message }));
-  job.on('close', code => { const cancelled = job === null; job = null; resolve(code === 0 ? { ok: true } : { ok: false, error: cancelled ? 'Export annulé' : tail.split('\n').slice(-4).join(' ') }); });
+  job.on('error', e => { clean(); resolve({ ok: false, error: e.message }); });
+  job.on('close', code => { clean(); const cancelled = job === null; job = null; resolve(code === 0 ? { ok: true } : { ok: false, error: cancelled ? 'Export annulé' : tail.split('\n').slice(-4).join(' ') }); });
 }));
 
+ipcMain.handle('proj:save', async (_, data, asNew) => {
+  if (!projPath || asNew) {
+    const r = await dialog.showSaveDialog(win, { defaultPath: 'projet.kora', filters: [{ name: 'Projet KORA', extensions: ['kora'] }] });
+    if (r.canceled) return null; projPath = r.filePath;
+  }
+  fs.writeFileSync(projPath, data); return { name: path.basename(projPath) };
+});
+ipcMain.handle('proj:open', async () => {
+  const r = await dialog.showOpenDialog(win, { properties: ['openFile'], filters: [{ name: 'Projet KORA', extensions: ['kora'] }] });
+  if (r.canceled) return null; projPath = r.filePaths[0];
+  return { name: path.basename(projPath), data: fs.readFileSync(projPath, 'utf8') };
+});
 ipcMain.on('cancel', () => { if (job) { const j = job; job = null; j.kill('SIGKILL'); } });
 
 app.whenReady().then(createWindow);

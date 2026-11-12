@@ -1,6 +1,6 @@
 {
   "name": "kora-studio",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "KORA Studio - éditeur vidéo, image et audio",
   "author": "Jonard",
   "main": "main.js",

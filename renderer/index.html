@@ -7,6 +7,9 @@
   <div class="brand"><img src="../build/icon.png" alt=""><b>KORA Studio</b></div>
   <div class="proj">Projet sans titre</div>
   <div class="hr">
+    <button class="ib" id="bOpen" title="Ouvrir un projet" aria-label="Ouvrir un projet"><i data-i="open"></i></button>
+    <button class="ib" id="bSave" title="Enregistrer le projet (Ctrl+S)" aria-label="Enregistrer le projet"><i data-i="save"></i></button>
+    <span class="sep"></span>
     <button class="ib" id="bUndo" title="Annuler (Ctrl+Z)" aria-label="Annuler"><i data-i="undo"></i></button>
     <button class="ib" id="bRedo" title="Rétablir (Ctrl+Y)" aria-label="Rétablir"><i data-i="redo"></i></button>
     <button class="btn pri" id="bExport"><i data-i="download"></i>Exporter</button>
@@ -19,7 +22,7 @@
     <div id="grid"></div>
   </aside>
   <section id="stage">
-    <div id="screen"><video id="pv" hidden></video><img id="pi" alt="" hidden><div id="empty"></div></div>
+    <div id="screen"><video id="pv" hidden></video><img id="pi" alt="" hidden><canvas id="tcv" width="1280" height="720"></canvas><div id="empty"></div></div>
     <div class="transport">
       <span id="tc" class="tc">00:00.0</span>
       <button class="ib" id="bBack" aria-label="Début"><i data-i="skipb"></i></button>
@@ -32,6 +35,8 @@
 </div>
 <section id="tl">
   <div class="tbar">
+    <button class="btn" id="bText"><i data-i="type"></i>Texte<kbd>T</kbd></button>
+    <span class="sep"></span>
     <button class="btn" id="bCut"><i data-i="scissors"></i>Couper<kbd>C</kbd></button>
     <button class="btn" id="bDup"><i data-i="copy"></i>Dupliquer</button>
     <button class="btn" id="bDel"><i data-i="trash"></i>Supprimer<kbd>Suppr</kbd></button>
@@ -41,10 +46,10 @@
     <span class="grow"></span><span class="dim">Zoom</span><input type="range" id="zoom" min="10" max="140" value="40" aria-label="Zoom de la timeline">
   </div>
   <div class="tgrid">
-    <div class="heads"><div class="corner"></div><div class="head v"><i data-i="film"></i>Vidéo</div><div class="head a"><i data-i="music"></i>Audio</div></div>
+    <div class="heads"><div class="corner"></div><div class="head v"><i data-i="film"></i>Vidéo</div><div class="head a"><i data-i="music"></i>Audio</div><div class="head t"><i data-i="type"></i>Texte</div></div>
     <div id="scroll"><div id="content">
       <div id="ruler"></div>
-      <div id="lanes"><div class="lane v" id="lV"></div><div class="lane a" id="lA"></div></div>
+      <div id="lanes"><div class="lane v" id="lV"></div><div class="lane a" id="lA"></div><div class="lane t" id="lT"></div></div>
       <div id="playhead"><div class="knob"></div></div>
     </div></div>
   </div>
@@ -53,6 +58,7 @@
   <h3>Exporter</h3>
   <div id="mSet">
     <p class="dim" id="sum"></p>
+    <label>Nom du fichier<input type="text" id="fname" value="ma-video" maxlength="80" spellcheck="false"></label>
     <label id="resRow">Résolution<select id="res"><option value="720">720p HD</option><option value="1080">1080p Full HD</option><option value="480">480p</option></select></label>
     <div class="end"><button class="btn" id="mCancel">Annuler</button><button class="btn pri" id="mGo">Choisir l'emplacement…</button></div>
   </div>
