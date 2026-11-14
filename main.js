@@ -3,7 +3,8 @@ const path = require('path');
 const { spawn, execFile } = require('child_process');
 const fs = require('fs');
 const os = require('os');
-const { buildArgs } = require('./export');
+const { buildPlan } = require('./export');
+const { runPlan } = require('./runner');
 
 const fix = p => p.replace('app.asar' + path.sep, 'app.asar.unpacked' + path.sep);
 const FFMPEG = fix(require('ffmpeg-static'));
@@ -51,26 +52,17 @@ ipcMain.handle('save', async (_, ext, name) => {
   return /\.(mp4|mp3|m4a|wav)$/i.test(r.filePath) ? r.filePath : r.filePath + '.' + ext;
 });
 
-ipcMain.handle('export', (_, project, out) => new Promise(resolve => {
-  let plan, tmp = null;
+ipcMain.handle('export', async (_, project, out) => {
+  if (job) return { ok: false, error: 'Un export est déjà en cours' };
+  const hold = job = { cancelled: false, proc: null };
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kora-'));
   try {
-    if ((project.text || []).length) {
-      tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kora-'));
-      project.text.forEach((t, i) => { t.pngPath = path.join(tmp, 't' + i + '.png'); fs.writeFileSync(t.pngPath, Buffer.from(t.png.split(',')[1], 'base64')); });
-    }
-    plan = buildArgs(project, out);
-  } catch (e) { if (tmp) fs.rmSync(tmp, { recursive: true, force: true }); return resolve({ ok: false, error: e.message }); }
-  let tail = '';
-  job = spawn(FFMPEG, plan.args);
-  const clean = () => { if (tmp) fs.rmSync(tmp, { recursive: true, force: true }); };
-  job.stderr.on('data', d => {
-    const s = d.toString(); tail = (tail + s).slice(-1500);
-    const m = [...s.matchAll(/time=(\d+):(\d+):(\d+\.?\d*)/g)].pop();
-    if (m && plan.total) win.webContents.send('progress', Math.min(1, (+m[1] * 3600 + +m[2] * 60 + +m[3]) / plan.total));
-  });
-  job.on('error', e => { clean(); resolve({ ok: false, error: e.message }); });
-  job.on('close', code => { clean(); const cancelled = job === null; job = null; resolve(code === 0 ? { ok: true } : { ok: false, error: cancelled ? 'Export annulé' : tail.split('\n').slice(-4).join(' ') }); });
-}));
+    (project.text || []).forEach((t, i) => { t.pngPath = path.join(tmp, 't' + i + '.png'); fs.writeFileSync(t.pngPath, Buffer.from(t.png.split(',')[1], 'base64')); delete t.png; });
+    const plan = buildPlan(project, out, tmp);
+    return await runPlan(plan, FFMPEG, v => win && !win.isDestroyed() && win.webContents.send('progress', v), hold);
+  } catch (e) { return { ok: false, error: e.message }; }
+  finally { job = null; fs.rmSync(tmp, { recursive: true, force: true }); }
+});
 
 ipcMain.handle('proj:save', async (_, data, asNew) => {
   if (!projPath || asNew) {
@@ -84,7 +76,8 @@ ipcMain.handle('proj:open', async () => {
   if (r.canceled) return null; projPath = r.filePaths[0];
   return { name: path.basename(projPath), data: fs.readFileSync(projPath, 'utf8') };
 });
-ipcMain.on('cancel', () => { if (job) { const j = job; job = null; j.kill('SIGKILL'); } });
+ipcMain.on('cancel', () => { if (job) { job.cancelled = true; if (job.proc) job.proc.kill('SIGKILL'); } });
 
 app.whenReady().then(createWindow);
+app.on('before-quit', () => { if (job) { job.cancelled = true; if (job.proc) job.proc.kill('SIGKILL'); } });
 app.on('window-all-closed', () => app.quit());

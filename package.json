@@ -1,6 +1,6 @@
 {
   "name": "kora-studio",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "KORA Studio - éditeur vidéo, image et audio",
   "author": "Jonard",
   "main": "main.js",
@@ -12,7 +12,7 @@
     "productName": "KORA Studio",
     "icon": "build/icon.png",
     "asarUnpack": ["node_modules/ffmpeg-static/**", "node_modules/ffprobe-static/**"],
-    "files": ["main.js", "preload.js", "export.js", "renderer/**", "build/icon.png", "package.json"],
+    "files": ["main.js", "preload.js", "export.js", "runner.js", "renderer/**", "build/icon.png", "package.json"],
     "win": { "target": "nsis" },
     "linux": { "target": "AppImage", "category": "AudioVideo" }
   }

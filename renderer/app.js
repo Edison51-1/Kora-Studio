@@ -29,6 +29,23 @@ const S = { lib: [], visual: [], audio: [], text: [], sel: null, undo: [], redo:
 let T = 0, playing = false, last = 0, raf = 0, uid = 1;
 const pv = $('#pv'), pi = $('#pi'), pa = new Audio(), pr = new Audio(), cv = $('#tcv');
 const nid = () => 'c' + uid++;
+// Miniatures : une petite image par média, créée une seule fois (au lieu de garder des vidéos/photos en grand)
+const thumbQ = []; let thumbBusy = false;
+function makeThumb(it) {
+  return new Promise((res, rej) => {
+    const W = 240, H = 135;
+    const draw = (src, w, h) => { const k = document.createElement('canvas'); k.width = W; k.height = H; const x = k.getContext('2d'); x.fillStyle = '#000'; x.fillRect(0, 0, W, H); const s = Math.min(W / w, H / h); x.drawImage(src, (W - w * s) / 2, (H - h * s) / 2, w * s, h * s); return k.toDataURL('image/jpeg', .7); };
+    if (it.type === 'image') { const im = new Image(); im.onload = () => { try { res(draw(im, im.naturalWidth, im.naturalHeight)); } catch (e) { rej(e); } im.src = ''; }; im.onerror = rej; im.src = url(it.path); }
+    else { const v = document.createElement('video'); v.muted = true; v.preload = 'auto'; v.onloadeddata = () => { v.currentTime = Math.min(.5, (it.duration || 1) / 2); }; v.onseeked = () => { try { res(draw(v, v.videoWidth, v.videoHeight)); } catch (e) { rej(e); } v.removeAttribute('src'); v.load(); }; v.onerror = rej; v.src = url(it.path); }
+  });
+}
+function ensureThumb(it) { if (it.thumb || it.type === 'audio' || it._t) return; it._t = 1; thumbQ.push(it); pumpThumbs(); }
+async function pumpThumbs() {
+  if (thumbBusy) return; thumbBusy = true;
+  while (thumbQ.length) { const it = thumbQ.shift(); try { it.thumb = await makeThumb(it); renderLib(); renderTL(); } catch (e) { /* pas de miniature */ } }
+  thumbBusy = false;
+}
+const thumbOf = path => { const l = S.lib.find(x => x.path === path); return l && l.thumb; };
 const spd = c => c.speed || 1;
 const len = c => c.type === 'text' ? c.dur : (c.end - c.start) / spd(c);
 const tc = t => { t = Math.max(0, t || 0); const m = Math.floor(t / 60), s = t - m * 60; return String(m).padStart(2, '0') + ':' + (s < 10 ? '0' : '') + s.toFixed(1); };
@@ -53,7 +70,7 @@ async function addFiles(paths) {
   for (const p of paths) {
     const i = await kora.probe(p);
     if (i.error) { toast(i.error + ' : ' + p.split(/[\\/]/).pop()); continue; }
-    S.lib.push({ id: nid(), path: p, name: p.split(/[\\/]/).pop(), ...i });
+    const it = { id: nid(), path: p, name: p.split(/[\\/]/).pop(), ...i }; S.lib.push(it); ensureThumb(it);
   }
   renderLib();
 }
@@ -75,8 +92,8 @@ function renderLib() {
   const items = S.lib.filter(i => S.flt === 'all' || i.type === S.flt);
   if (!items.length) { g.innerHTML = '<div class="hint">Glisse tes fichiers ici<br>ou clique sur « Importer »</div>'; return; }
   items.forEach(it => {
-    const u = url(it.path), d = document.createElement('div'); d.className = 'card'; d.draggable = true;
-    const th = it.type === 'image' ? `<img src="${u}" alt="">` : it.type === 'video' ? `<video src="${u}#t=0.5" preload="metadata" muted></video>` : `<div class="aico">${ico('music')}</div>`;
+    const d = document.createElement('div'); d.className = 'card'; d.draggable = true;
+    const th = it.type === 'audio' ? `<div class="aico">${ico('music')}</div>` : it.thumb ? `<img src="${it.thumb}" alt="">` : `<div class="aico">${ico(it.type === 'image' ? 'image' : 'film')}</div>`;
     d.innerHTML = `<div class="thumb">${th}</div><span class="badge">${ico({ video: 'film', image: 'image', audio: 'music' }[it.type])}</span><button class="add" aria-label="Ajouter à la timeline">+</button><div class="cap"><span class="nm"></span><span class="dim">${it.type === 'image' ? 'Image' : tc(it.duration)}</span></div>`;
     d.querySelector('.nm').textContent = it.name;
     d.querySelector('.add').onclick = () => addToTL(it);
@@ -85,11 +102,13 @@ function renderLib() {
     g.appendChild(d);
   });
 }
+const waveCache = new Map();
 function wave(id, w) {
+  const key = id + ':' + Math.round(w / 4); if (waveCache.has(key)) return waveCache.get(key); if (waveCache.size > 300) waveCache.clear();
   let h = 7; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   const n = Math.max(6, Math.min(400, Math.floor(w / 4))); let r = '';
   for (let i = 0; i < n; i++) { h = (h * 1664525 + 1013904223) >>> 0; const a = .2 + .8 * ((h >>> 8) % 100) / 100; r += `<rect x="${i * 4}" y="${16 - a * 14}" width="2" height="${a * 28}" rx="1"/>`; }
-  return `<svg class="w" viewBox="0 0 ${n * 4} 32" preserveAspectRatio="none" fill="rgba(255,255,255,.6)">${r}</svg>`;
+  const svg = `<svg class="w" viewBox="0 0 ${n * 4} 32" preserveAspectRatio="none" fill="rgba(255,255,255,.6)">${r}</svg>`; waveCache.set(key, svg); return svg;
 }
 function renderTL() {
   const sc = S.scale, ends = layout('text').map(x => x.e), tot = Math.max(total(), ...ends, 0), w = Math.max($('#scroll').clientWidth, tot * sc + 240);
@@ -103,16 +122,17 @@ function renderTL() {
       const d = document.createElement('div'), cw = (e - s) * sc;
       d.className = 'clip ' + c.type + (S.sel && S.sel.id === c.id ? ' sel' : '');
       d.style.left = s * sc + 'px'; d.style.width = Math.max(4, cw - 2) + 'px';
-      if (c.type === 'image') d.style.backgroundImage = `linear-gradient(rgba(0,0,0,.25),rgba(0,0,0,.25)),url("${url(c.path)}")`;
+      const th = c.type === 'image' && thumbOf(c.path); if (th) d.style.backgroundImage = `linear-gradient(rgba(0,0,0,.25),rgba(0,0,0,.25)),url("${th}")`;
       d.innerHTML = (c.type === 'audio' ? wave(c.id, cw) : '') + '<div class="lab"></div>';
       d.querySelector('.lab').textContent = c.type === 'text' ? c.text.replace(/\n/g, ' ') : c.name + (spd(c) !== 1 ? ' · ' + spd(c) + '×' : '');
       d.onmousedown = e => {
         e.stopPropagation();
         if (tr !== 'text') return;
-        S.sel = { t: 'text', id: c.id }; const x0 = e.clientX, s0 = c.start; let moved = false;
-        const mv = ev => { const ns = Math.max(0, +(s0 + (ev.clientX - x0) / S.scale).toFixed(1)); if (ns !== c.start) { if (!moved) { snap(); moved = true; } c.start = ns; renderAll(); } };
-        const up = () => { removeEventListener('mousemove', mv); renderAll(); };
-        addEventListener('mousemove', mv); addEventListener('mouseup', up, { once: true }); renderAll();
+        S.sel = { t: 'text', id: c.id }; $$('.clip.sel').forEach(x => x.classList.remove('sel')); d.classList.add('sel'); renderInsp(); showFrame();
+        const x0 = e.clientX, s0 = c.start; let moved = false;
+        const mv = ev => { const ns = Math.max(0, +(s0 + (ev.clientX - x0) / S.scale).toFixed(1)); if (ns !== c.start) { if (!moved) { snap(); moved = true; } c.start = ns; d.style.left = ns * S.scale + 'px'; showFrame(); } };
+        const up = () => { removeEventListener('mousemove', mv); if (moved) renderAll(); };
+        addEventListener('mousemove', mv); addEventListener('mouseup', up, { once: true });
       };
       d.onclick = () => { if (tr === 'text') return; S.sel = { t: tr, id: c.id }; if (!(T >= s && T < e)) T = s; renderAll(); };
       lane.appendChild(d);
@@ -236,7 +256,9 @@ function imgAnim(c, p, t, d) {
   if (an === 'fadeout' || an === 'fadeinout') op = Math.min(op, (d - t) / fd);
   return { tr, op: Math.max(0, Math.min(1, op)) };
 }
-const cssFilter = c => `brightness(${1 + (c.bright || 0)}) contrast(${c.contrast ?? 1}) saturate(${c.sat ?? 1})`;
+const cssFilter = c => (!c.bright && (c.contrast ?? 1) === 1 && (c.sat ?? 1) === 1) ? 'none' : `brightness(${1 + (c.bright || 0)}) contrast(${c.contrast ?? 1}) saturate(${c.sat ?? 1})`;
+const cs = (el, k, v) => { el._c = el._c || {}; if (el._c[k] !== v) { el._c[k] = v; el.style[k] = v; } };
+const cm = (el, k, v) => { el._m = el._m || {}; if (el._m[k] !== v) { el._m[k] = v; el[k] = v; } };
 const fadeVol = (c, t, s, e) => Math.min(1, c.fi > 0 ? (t - s) / c.fi : 1, c.fo > 0 ? (e - t) / c.fo : 1);
 
 function showFrame() {
@@ -249,32 +271,32 @@ function showFrame() {
     if (c.type === 'image') {
       pv.pause(); pv.hidden = true; if (pi._p !== c.path) { pi._p = c.path; pi.src = url(c.path); }
       pi.hidden = false; const a = imgAnim(c, tl / d, tl, d);
-      pi.style.objectFit = c.fit === 'cover' ? 'cover' : 'contain'; pi.style.transform = a.tr; pi.style.opacity = a.op; pi.style.filter = cssFilter(c);
+      cs(pi, 'objectFit', c.fit === 'cover' ? 'cover' : 'contain'); cs(pi, 'transform', a.tr); cs(pi, 'opacity', String(a.op)); cs(pi, 'filter', cssFilter(c));
     } else {
       pi.hidden = true; pv.hidden = false; const want = c.start + tl * spd(c);
       if (pv._p !== c.path) { pv._p = c.path; pv.src = url(c.path); pv.currentTime = want; }
       else if (Math.abs(pv.currentTime - want) > (playing ? .35 : .04)) pv.currentTime = want;
-      pv.playbackRate = spd(c); pv.volume = c.mute ? 0 : Math.min(1, (c.vol ?? 1) * fadeVol(c, T, v.s, v.e)); pv.style.filter = cssFilter(c);
+      const vv = c.mute ? 0 : Math.min(1, (c.vol ?? 1) * fadeVol(c, T, v.s, v.e)); cm(pv, 'playbackRate', spd(c)); cm(pv, 'volume', vv); cs(pv, 'filter', cssFilter(c));
       if (playing) { if (pv.paused) pv.play().catch(() => {}); } else pv.pause();
       if (c.sound) {
-        pv.muted = true; const w2 = (c.sound.start || 0) + tl;
+        cm(pv, 'muted', true); const w2 = (c.sound.start || 0) + tl;
         if (pr._p !== c.sound.path) { pr._p = c.sound.path; pr.src = url(c.sound.path); pr.currentTime = w2; }
         else if (Math.abs(pr.currentTime - w2) > (playing ? .35 : .04)) pr.currentTime = w2;
-        pr.volume = pv.volume; if (playing) { if (pr.paused) pr.play().catch(() => {}); } else pr.pause();
-      } else pv.muted = false;
+        cm(pr, 'volume', vv); if (playing) { if (pr.paused) pr.play().catch(() => {}); } else pr.pause();
+      } else cm(pv, 'muted', false);
     }
   }
-  if (!(v && v.c.type === 'video' && v.c.sound)) { pr.pause(); pv.muted = false; }
+  if (!(v && v.c.type === 'video' && v.c.sound)) { pr.pause(); cm(pv, 'muted', false); }
   const a = at('audio', T);
   if (!a) pa.pause(); else {
     const want = a.c.start + (T - a.s);
     if (pa._p !== a.c.path) { pa._p = a.c.path; pa.src = url(a.c.path); pa.currentTime = want; }
     else if (Math.abs(pa.currentTime - want) > (playing ? .35 : .04)) pa.currentTime = want;
-    pa.volume = a.c.mute ? 0 : Math.min(1, (a.c.vol ?? 1) * fadeVol(a.c, T, a.s, a.e));
+    cm(pa, 'volume', a.c.mute ? 0 : Math.min(1, (a.c.vol ?? 1) * fadeVol(a.c, T, a.s, a.e)));
     if (playing) { if (pa.paused) pa.play().catch(() => {}); } else pa.pause();
   }
-  const ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height);
-  S.text.forEach(c => { if (T >= c.start && T < c.start + c.dur) drawText(ctx, cv.width, cv.height, c, textAnim(c, T, cv.width, cv.height)); });
+  const act = S.text.filter(c => T >= c.start && T < c.start + c.dur);
+  if (act.length || cv._on) { const ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height); act.forEach(c => drawText(ctx, cv.width, cv.height, c, textAnim(c, T, cv.width, cv.height))); cv._on = act.length > 0; }
   const sc = cur(); cv.style.pointerEvents = sc && sc.type === 'text' ? 'auto' : 'none'; cv.style.cursor = 'move';
 }
 function updHead() {
@@ -282,7 +304,7 @@ function updHead() {
   $('#tc').textContent = tc(T); $('#tt').textContent = '/ ' + tc(total());
   const sc = $('#scroll'); if (playing && (x > sc.scrollLeft + sc.clientWidth - 40 || x < sc.scrollLeft)) sc.scrollLeft = Math.max(0, x - 40);
 }
-function renderAll() { renderLib(); renderTL(); renderInsp(); showFrame(); }
+function renderAll() { renderTL(); renderInsp(); showFrame(); }
 
 // Glisser le texte sélectionné directement dans l'aperçu
 cv.onpointerdown = e => {
@@ -326,7 +348,7 @@ function move(d) { const c = cur(); if (!c || c.type === 'text') return; const a
 
 // Projets
 async function saveProj() {
-  const r = await kora.saveProject(JSON.stringify({ v: 2, lib: S.lib, visual: S.visual, audio: S.audio, text: S.text }));
+  const r = await kora.saveProject(JSON.stringify({ v: 2, lib: S.lib.map(({ thumb, _t, ...r }) => r), visual: S.visual, audio: S.audio, text: S.text }));
   if (r) { $('.proj').textContent = r.name; toast('Projet enregistré'); }
 }
 async function openProj() {
@@ -335,7 +357,7 @@ async function openProj() {
     const o = JSON.parse(r.data); pause();
     S.lib = o.lib || []; S.visual = o.visual || []; S.audio = o.audio || []; S.text = o.text || [];
     const ids = [...S.lib, ...S.visual, ...S.audio, ...S.text].map(x => +String(x.id).slice(1) || 0); uid = Math.max(uid, ...ids) + 1;
-    S.sel = null; S.undo = []; S.redo = []; T = 0; $('.proj').textContent = r.name; renderAll();
+    S.sel = null; S.undo = []; S.redo = []; T = 0; $('.proj').textContent = r.name; S.lib.forEach(ensureThumb); renderLib(); renderAll();
   } catch (e) { toast('Fichier de projet invalide'); }
 }
 
@@ -375,4 +397,5 @@ $('#mGo').onclick = async () => {
 };
 $('#pCancel').onclick = () => kora.cancel();
 kora.onProgress(v => { $('#bar').style.width = Math.round(v * 100) + '%'; $('#pt').textContent = 'Export en cours… ' + Math.round(v * 100) + ' %'; });
+renderLib();
 renderAll();

@@ -1,4 +1,5 @@
-// Construit la commande FFmpeg à partir du projet (vidéo/images, audio, textes)
+// Plan d'export en étapes : 1 fichier temporaire par clip, puis assemblage (léger en RAM)
+const path = require('path');
 const FPS = 30;
 const AF = 'aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo';
 const LEGACY = { fade: 'fadeinout', pan: 'panright' };
@@ -58,68 +59,77 @@ function imageChain(c, d, W, H, i, k, args, f) {
   }
 }
 
-function buildArgs(p, out) {
-  const H = p.height || 720, W = Math.round(H * 16 / 9 / 2) * 2;
-  const vis = p.visual || [], aud = p.audio || [], txt = p.text || [], a = ['-y'], f = [];
+
+const BASE = ['-hide_banner', '-nostdin', '-loglevel', 'error', '-progress', 'pipe:1', '-nostats', '-y'];
+const VENC = crf => ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', String(crf), '-pix_fmt', 'yuv420p'];
+const AENC = ['-c:a', 'aac', '-b:a', '192k', '-ar', '44100', '-ac', '2'];
+const PCM = ['-c:a', 'pcm_s16le', '-ar', '44100', '-ac', '2']; // son exact dans les fichiers temporaires (pas de décalage)
+const fwd = p => p.replace(/\\/g, '/');
+
+function segment(c, W, H, tmp, i) {
+  const d = dur(c), a = [...BASE], f = [];
   const FIT = `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${FPS},format=yuv420p`;
-  let total = 0, k = 0;
-  vis.forEach((c, i) => {
-    const d = dur(c); total += d;
-    if (c.type === 'video') {
-      const sp = c.speed || 1;
-      a.push('-ss', String(c.start), '-t', String(+(c.end - c.start).toFixed(3)), '-i', c.path);
-      f.push(`[${k}:v]setpts=(PTS-STARTPTS)/${sp},${FIT}${eqf(c)}[v${i}]`);
-      if (c.sound && c.sound.path) {
-        k++; a.push('-ss', String(c.sound.start || 0), '-t', String(d), '-i', c.sound.path);
-        f.push(`[${k}:a]${AF},apad,atrim=0:${d},asetpts=PTS-STARTPTS,${afx(c, d)}[a${i}]`);
-      } else f.push(c.hasAudio
-        ? `[${k}:a]${AF}${sp !== 1 ? `,atempo=${sp}` : ''},${afx(c, d)}[a${i}]`
-        : `anullsrc=r=44100:cl=stereo:d=${d}[a${i}]`);
-    } else {
-      imageChain(c, d, W, H, i, k, a, f);
-      f.push(`anullsrc=r=44100:cl=stereo:d=${d}[a${i}]`);
-    }
-    k++;
-  });
-  let audTotal = 0;
-  aud.forEach((c, j) => {
-    const d = dur(c); audTotal += d;
-    a.push('-ss', String(c.start), '-t', String(d), '-i', c.path);
-    f.push(`[${k}:a]${AF},${afx(c, d)}[b${j}]`);
-    k++;
-  });
-  if (aud.length) {
+  if (c.type === 'video') {
+    const sp = c.speed || 1;
+    a.push('-ss', String(c.start), '-t', String(+(c.end - c.start).toFixed(3)), '-i', c.path);
+    f.push(`[0:v]setpts=(PTS-STARTPTS)/${sp},${FIT}${eqf(c)},tpad=stop_mode=clone:stop_duration=2,trim=duration=${d},setpts=PTS-STARTPTS[v0]`);
+    if (c.sound && c.sound.path) {
+      a.push('-ss', String(c.sound.start || 0), '-t', String(d), '-i', c.sound.path);
+      f.push(`[1:a]${AF},apad,atrim=0:${d},asetpts=PTS-STARTPTS,${afx(c, d)}[a0]`);
+    } else if (c.hasAudio) f.push(`[0:a]${AF}${sp !== 1 ? `,atempo=${sp}` : ''},apad,atrim=0:${d},asetpts=PTS-STARTPTS,${afx(c, d)}[a0]`);
+    else f.push(`anullsrc=r=44100:cl=stereo:d=${d}[a0]`);
+  } else {
+    imageChain(c, d, W, H, 0, 0, a, f);
+    f.push(`anullsrc=r=44100:cl=stereo:d=${d}[a0]`);
+  }
+  const file = path.join(tmp, `s${i}.mkv`);
+  a.push('-filter_complex', f.join(';'), '-map', '[v0]', '-map', '[a0]', ...VENC(18), '-r', String(FPS), ...PCM,
+    '-t', String(d), '-f', 'matroska', file);
+  return { args: a, dur: d, w: d, file };
+}
+
+function buildPlan(p, out, tmp) {
+  const H = p.height || 720, W = Math.round(H * 16 / 9 / 2) * 2;
+  const vis = p.visual || [], aud = p.audio || [], txt = p.text || [], steps = [];
+  const audioInputs = (a, f, k) => {
+    aud.forEach((c, j) => { const d = dur(c); a.push('-ss', String(c.start), '-t', String(d), '-i', c.path); f.push(`[${k + j}:a]${AF},${afx(c, d)}[b${j}]`); });
     let src = '[b0]';
     if (aud.length > 1) { f.push(`${aud.map((_, j) => `[b${j}]`).join('')}concat=n=${aud.length}:v=0:a=1[bgc]`); src = '[bgc]'; }
+    return src;
+  };
+  if (!vis.length) {
+    const a = [...BASE], f = [], src = audioInputs(a, f, 0), t = aud.reduce((s, c) => s + dur(c), 0);
     f.push(`${src}anull[bg]`);
-  }
-  if (vis.length) {
-    f.push(`${vis.map((_, i) => `[v${i}][a${i}]`).join('')}concat=n=${vis.length}:v=1:a=1[vc][ac]`);
-    let last = 'vc';
-    txt.forEach((c, j) => {
-      const st = +c.start.toFixed(3), et = +Math.min(total, c.start + c.dur).toFixed(3);
-      if (st >= total || !c.pngPath) return;
-      a.push('-loop', '1', '-framerate', String(FPS), '-t', String(+total.toFixed(3)), '-i', c.pngPath);
-      const an = c.anim || 'none', p5 = `pow(1-min(1,max(0,(t-${st})/0.5)),2)`;
-      let ch = `[${k}:v]format=rgba`;
-      if (an !== 'none') ch += `,fade=t=in:st=${st}:d=0.5:alpha=1,fade=t=out:st=${Math.max(st, et - 0.3).toFixed(3)}:d=0.3:alpha=1`;
-      f.push(`${ch}[tx${j}]`);
-      const x = an === 'slideleft' ? `-${(0.15 * W).toFixed(1)}*${p5}` : an === 'slideright' ? `${(0.15 * W).toFixed(1)}*${p5}` : '0';
-      const y = an === 'slideup' ? `${(0.15 * H).toFixed(1)}*${p5}` : an === 'slidedown' ? `-${(0.15 * H).toFixed(1)}*${p5}` : '0';
-      f.push(`[${last}][tx${j}]overlay=x='${x}':y='${y}':enable='between(t,${st},${et})':format=auto[o${j}]`);
-      last = `o${j}`; k++;
-    });
-    if (aud.length) f.push('[ac][bg]amix=inputs=2:duration=first:normalize=0[ao]');
-    a.push('-filter_complex', f.join(';'), '-map', `[${last}]`, '-map', aud.length ? '[ao]' : '[ac]',
-      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p',
-      '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart');
-  } else {
-    total = audTotal;
     a.push('-filter_complex', f.join(';'), '-map', '[bg]');
-    if (/\.mp3$/i.test(out)) a.push('-c:a', 'libmp3lame', '-b:a', '192k');
-    else if (/\.m4a$/i.test(out)) a.push('-c:a', 'aac', '-b:a', '192k');
+    if (/\.mp3$/i.test(out)) a.push('-c:a', 'libmp3lame', '-b:a', '192k'); else if (/\.m4a$/i.test(out)) a.push('-c:a', 'aac', '-b:a', '192k');
+    a.push(out); steps.push({ args: a, dur: t, w: t });
+    return { steps, list: null, total: t };
   }
-  a.push(out);
-  return { args: a, total };
+  let total = 0;
+  vis.forEach((c, i) => { const s = segment(c, W, H, tmp, i); steps.push(s); total += s.dur; });
+  const list = { path: path.join(tmp, 'list.txt'), content: steps.map(s => `file '${fwd(s.file).replace(/'/g, "'\\''")}'`).join('\n') };
+  const a = [...BASE, '-f', 'concat', '-safe', '0', '-i', fwd(list.path)], f = [];
+  let k = 1, main = '[0:v]', hasText = false;
+  let ao = null;
+  if (aud.length) { const src = audioInputs(a, f, k); k += aud.length; f.push(`[0:a]${src}amix=inputs=2:duration=first:normalize=0[ao]`); ao = '[ao]'; }
+  txt.forEach((c, j) => {
+    const st = +c.start.toFixed(3), et = +Math.min(total, c.start + c.dur).toFixed(3), d = +(et - st).toFixed(3);
+    if (d <= 0.05 || !c.pngPath) return;
+    hasText = true;
+    a.push('-loop', '1', '-framerate', String(FPS), '-t', String(d), '-i', c.pngPath);
+    const an = c.anim || 'none', p5 = `pow(1-min(1,max(0,(t-${st})/0.5)),2)`;
+    let ch = `[${k}:v]format=rgba`;
+    if (an !== 'none') ch += `,fade=t=in:st=0:d=0.5:alpha=1,fade=t=out:st=${Math.max(0, d - 0.3).toFixed(3)}:d=0.3:alpha=1`;
+    f.push(`${ch},setpts=PTS+${st}/TB[tx${j}]`);
+    const x = an === 'slideleft' ? `-${(0.15 * W).toFixed(1)}*${p5}` : an === 'slideright' ? `${(0.15 * W).toFixed(1)}*${p5}` : '0';
+    const y = an === 'slideup' ? `${(0.15 * H).toFixed(1)}*${p5}` : an === 'slidedown' ? `-${(0.15 * H).toFixed(1)}*${p5}` : '0';
+    f.push(`${main}[tx${j}]overlay=x='${x}':y='${y}':enable='between(t,${st},${et})':eof_action=pass:format=auto[o${j}]`);
+    main = `[o${j}]`; k++;
+  });
+  if (f.length) a.push('-filter_complex', f.join(';'));
+  if (hasText) a.push('-map', main, ...VENC(20)); else a.push('-map', '0:v', '-c:v', 'copy');
+  a.push('-map', ao || '0:a', ...AENC, '-movflags', '+faststart', out);
+  steps.push({ args: a, dur: total, w: hasText ? total : Math.max(0.2, total * 0.1) });
+  return { steps, list, total };
 }
-module.exports = { buildArgs };
+module.exports = { buildPlan };
