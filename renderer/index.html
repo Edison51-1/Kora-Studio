@@ -55,10 +55,11 @@
   </div>
 </section>
 <div id="modal" hidden><div class="dlg">
-  <h3>Exporter</h3>
+  <h3 id="mt">Exporter</h3>
   <div id="mSet">
     <p class="dim" id="sum"></p>
     <label>Nom du fichier<input type="text" id="fname" value="ma-video" maxlength="80" spellcheck="false"></label>
+    <label id="qRow" hidden>Qualité MP3<select id="kbps"><option value="128">128 kbps (léger)</option><option value="192" selected>192 kbps (bon)</option><option value="256">256 kbps (très bon)</option><option value="320">320 kbps (maximum)</option></select></label>
     <label id="resRow">Résolution<select id="res"><option value="720">720p HD</option><option value="1080">1080p Full HD</option><option value="480">480p</option></select></label>
     <div class="end"><button class="btn" id="mCancel">Annuler</button><button class="btn pri" id="mGo">Choisir l'emplacement…</button></div>
   </div>

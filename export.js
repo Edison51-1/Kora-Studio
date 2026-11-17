@@ -92,7 +92,11 @@ function buildPlan(p, out, tmp) {
   const H = p.height || 720, W = Math.round(H * 16 / 9 / 2) * 2;
   const vis = p.visual || [], aud = p.audio || [], txt = p.text || [], steps = [];
   const audioInputs = (a, f, k) => {
-    aud.forEach((c, j) => { const d = dur(c); a.push('-ss', String(c.start), '-t', String(d), '-i', c.path); f.push(`[${k + j}:a]${AF},${afx(c, d)}[b${j}]`); });
+    aud.forEach((c, j) => {
+      const d = dur(c), sp = c.speed || 1;
+      a.push('-ss', String(c.start), '-t', String(+(c.end - c.start).toFixed(3)), '-i', c.path);
+      f.push(`[${k + j}:a]${AF}${sp !== 1 ? `,atempo=${sp}` : ''},${afx(c, d)}[b${j}]`);
+    });
     let src = '[b0]';
     if (aud.length > 1) { f.push(`${aud.map((_, j) => `[b${j}]`).join('')}concat=n=${aud.length}:v=0:a=1[bgc]`); src = '[bgc]'; }
     return src;
@@ -101,7 +105,7 @@ function buildPlan(p, out, tmp) {
     const a = [...BASE], f = [], src = audioInputs(a, f, 0), t = aud.reduce((s, c) => s + dur(c), 0);
     f.push(`${src}anull[bg]`);
     a.push('-filter_complex', f.join(';'), '-map', '[bg]');
-    if (/\.mp3$/i.test(out)) a.push('-c:a', 'libmp3lame', '-b:a', '192k'); else if (/\.m4a$/i.test(out)) a.push('-c:a', 'aac', '-b:a', '192k');
+    if (/\.mp3$/i.test(out)) a.push('-vn', '-c:a', 'libmp3lame', '-b:a', `${p.kbps || 192}k`); else if (/\.m4a$/i.test(out)) a.push('-c:a', 'aac', '-b:a', '192k');
     a.push(out); steps.push({ args: a, dur: t, w: t });
     return { steps, list: null, total: t };
   }

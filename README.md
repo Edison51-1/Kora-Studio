@@ -12,6 +12,7 @@
 - Couper, dupliquer, supprimer, réordonner, annuler/rétablir
 - **Enregistrer et rouvrir un projet** (fichier `.kora`)
 - Lecture de toute la séquence en direct, export MP4 (480p / 720p / 1080p) ou MP3 — propulsé par FFmpeg
+- **Vidéo → MP3** : bouton « MP3 » sur chaque média de la bibliothèque, ou « Convertir cette vidéo en MP3 » dans l'inspecteur (respecte la découpe, la vitesse, le volume et les fondus), qualité 128 à 320 kbps
 - Export en étapes (un clip à la fois) : faible consommation de mémoire, priorité basse pour garder l'ordinateur fluide
 
 ## Raccourcis

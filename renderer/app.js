@@ -94,9 +94,10 @@ function renderLib() {
   items.forEach(it => {
     const d = document.createElement('div'); d.className = 'card'; d.draggable = true;
     const th = it.type === 'audio' ? `<div class="aico">${ico('music')}</div>` : it.thumb ? `<img src="${it.thumb}" alt="">` : `<div class="aico">${ico(it.type === 'image' ? 'image' : 'film')}</div>`;
-    d.innerHTML = `<div class="thumb">${th}</div><span class="badge">${ico({ video: 'film', image: 'image', audio: 'music' }[it.type])}</span><button class="add" aria-label="Ajouter à la timeline">+</button><div class="cap"><span class="nm"></span><span class="dim">${it.type === 'image' ? 'Image' : tc(it.duration)}</span></div>`;
+    d.innerHTML = `<div class="thumb">${th}</div><span class="badge">${ico({ video: 'film', image: 'image', audio: 'music' }[it.type])}</span><button class="add" aria-label="Ajouter à la timeline">+</button>${it.type !== 'image' ? '<button class="mp3" title="Convertir en MP3">MP3</button>' : ''}<div class="cap"><span class="nm"></span><span class="dim">${it.type === 'image' ? 'Image' : tc(it.duration)}</span></div>`;
     d.querySelector('.nm').textContent = it.name;
     d.querySelector('.add').onclick = () => addToTL(it);
+    const mb = d.querySelector('.mp3'); if (mb) mb.onclick = e => { e.stopPropagation(); startConvert({ type: 'audio', path: it.path, name: it.name, start: 0, end: it.duration, src: it.duration, hasAudio: it.hasAudio, vol: 1 }); };
     d.ondblclick = () => addToTL(it);
     d.ondragstart = e => e.dataTransfer.setData('text/plain', it.id);
     g.appendChild(d);
@@ -153,7 +154,7 @@ const SPEC = {
     ['Style', [R('size', 'Taille', 2, 30, .5, 1, ' %'), { y: 'k', k: 'color', l: 'Couleur' }, { y: 'f' }, C('bold', 'Gras'), C('outline', 'Contour noir'), C('box', 'Fond sombre')]],
     ['Position', [R('x', 'Horizontale', 0, 100, 1, 1, ' %'), R('y', 'Verticale', 0, 100, 1, 1, ' %'), { y: 'i', l: 'Astuce : tu peux aussi glisser le texte directement dans l\'aperçu.' }]],
     ['Animation', [A('anim', TANIMS)]]],
-  video: [['Découpe', [N('start', 'Début (s)', .1), N('end', 'Fin (s)', .1)]], ['Vitesse', [SEL('speed', 'Vitesse de lecture', SPEEDS)]], ...AUDIO, ['Remplacer le son', [{ y: 'snd' }]], ...COLOR],
+  video: [['Découpe', [N('start', 'Début (s)', .1), N('end', 'Fin (s)', .1)]], ['Vitesse', [SEL('speed', 'Vitesse de lecture', SPEEDS)]], ...AUDIO, ['Remplacer le son', [{ y: 'snd' }]], ['Extraire le son', [{ y: 'mp3b' }]], ...COLOR],
   audio: [['Découpe', [N('start', 'Début (s)', .1), N('end', 'Fin (s)', .1)]], ...AUDIO],
   image: [['Durée', [N('end', 'Durée (s)', .5)]], ['Cadrage', [A('fit', [['contain', 'Contenir'], ['cover', 'Remplir']])]], ['Animation', [A('anim', IANIMS, 'three')]], ...COLOR]
 };
@@ -175,6 +176,7 @@ function item(x) {
     case 's': return `<label>${l}<select data-k="${x.k}">${x.opts.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('')}</select></label>`;
     case 'a': return `<div class="anims ${x.cls}">${x.list.map(a => `<button class="an" data-k="${x.k}" data-v="${a[0]}">${a[1]}</button>`).join('')}</div>`;
     case 'b': return `<button class="ghostb" data-act="resetcol">${x.l}</button>`;
+    case 'mp3b': return '<button class="ghostb" id="sMp3">Convertir cette vidéo en MP3…</button>';
     case 'snd': return '<div id="sndBox" class="sec"></div>';
     case 'i': return `<div class="hint2">${x.l}</div>`;
   }
@@ -215,6 +217,7 @@ function renderInsp() {
       snap(); c.sound = { path: ps[0], name: ps[0].split(/[\\/]/).pop(), src: i.duration, start: 0 }; renderAll();
     };
   }
+  const mb3 = $('#sMp3'); if (mb3) mb3.onclick = () => startConvert(clipToAudio(c));
   const rb = b.querySelector('[data-act=resetcol]'); if (rb) rb.onclick = () => { snap(); Object.assign(c, { bright: 0, contrast: 1, sat: 1 }); renderAll(); };
 }
 
@@ -382,18 +385,32 @@ function textPngs(H) {
   const W = Math.round(H * 16 / 9 / 2) * 2;
   return S.text.filter(c => c.text.trim()).map(c => { const k = document.createElement('canvas'); k.width = W; k.height = H; drawText(k.getContext('2d'), W, H, c, { dx: 0, dy: 0, a: 1 }); return { start: c.start, dur: c.dur, anim: c.anim, png: k.toDataURL('image/png') }; });
 }
+const fileBase = n => (n || 'audio').replace(/\.[^.]+$/, '');
+function clipToAudio(c) {
+  if (c.sound) return { type: 'audio', path: c.sound.path, name: c.sound.name, start: c.sound.start || 0, end: (c.sound.start || 0) + len(c), src: c.sound.src, hasAudio: true, vol: c.vol, mute: c.mute, fi: c.fi, fo: c.fo };
+  return { type: 'audio', path: c.path, name: c.name, start: c.start, end: c.end, src: c.src, speed: c.speed, hasAudio: c.hasAudio, vol: c.vol, mute: c.mute, fi: c.fi, fo: c.fo };
+}
+function startConvert(a) {
+  if (!a.hasAudio) return toast('Ce fichier ne contient pas de son');
+  pause(); S.conv = a; $('#mt').textContent = 'Convertir en MP3';
+  $('#sum').textContent = `${a.name} · durée ${tc(len(a))}`; $('#fname').value = fileBase(a.name);
+  $('#resRow').hidden = true; $('#qRow').hidden = false; $('#mSet').hidden = false; $('#mProg').hidden = true; $('#modal').hidden = false;
+}
 $('#bExport').onclick = () => {
+  S.conv = null; $('#mt').textContent = 'Exporter';
   if (!S.visual.length && !S.audio.length) return toast('Ajoute des clips à la timeline');
   pause(); $('#fname').value = $('#fname').value || 'ma-video'; $('#sum').textContent = `${S.visual.length} clip(s) vidéo/image · ${S.audio.length} audio · ${S.text.length} texte(s) · durée ${tc(total())}`;
-  $('#fname').value = ($('.proj').textContent || '').replace(/\.kora$/i, '').replace(/^Projet sans titre$/, '') || $('#fname').value; $('#resRow').hidden = !S.visual.length; $('#mSet').hidden = false; $('#mProg').hidden = true; $('#modal').hidden = false;
+  $('#fname').value = ($('.proj').textContent || '').replace(/\.kora$/i, '').replace(/^Projet sans titre$/, '') || $('#fname').value; $('#resRow').hidden = !S.visual.length; $('#qRow').hidden = !!S.visual.length; $('#mSet').hidden = false; $('#mProg').hidden = true; $('#modal').hidden = false;
 };
-$('#mCancel').onclick = () => $('#modal').hidden = true;
+$('#mCancel').onclick = () => { $('#modal').hidden = true; S.conv = null; };
 $('#mGo').onclick = async () => {
   const name = ($('#fname').value || '').replace(/[\\/:*?"<>|]/g, '').replace(/\.(mp4|mp3|m4a|wav)$/i, '').trim() || 'ma-video';
-  const out = await kora.save(S.visual.length ? 'mp4' : 'mp3', name); if (!out) return;
+  const conv = S.conv, isMp3 = !!conv || !S.visual.length;
+  const out = await kora.save(isMp3 ? 'mp3' : 'mp4', name); if (!out) return;
   $('#bar').style.width = '0'; $('#pt').textContent = 'Export en cours…'; $('#mSet').hidden = true; $('#mProg').hidden = false;
-  const H = +$('#res').value, r = await kora.exportProject({ visual: S.visual, audio: S.audio, text: S.visual.length ? textPngs(H) : [], height: H }, out);
-  $('#modal').hidden = true; toast(r.ok ? 'Export terminé : ' + out : 'Erreur : ' + r.error);
+  const H = +$('#res').value, kbps = +$('#kbps').value;
+  const r = await kora.exportProject(conv ? { visual: [], audio: [conv], text: [], kbps } : { visual: S.visual, audio: S.audio, text: S.visual.length ? textPngs(H) : [], height: H, kbps }, out);
+  S.conv = null; $('#modal').hidden = true; toast(r.ok ? 'Export terminé : ' + out : 'Erreur : ' + r.error);
 };
 $('#pCancel').onclick = () => kora.cancel();
 kora.onProgress(v => { $('#bar').style.width = Math.round(v * 100) + '%'; $('#pt').textContent = 'Export en cours… ' + Math.round(v * 100) + ' %'; });
