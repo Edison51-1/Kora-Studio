@@ -3,17 +3,17 @@
 <p align="center">Éditeur vidéo, image et audio — simple, moderne, hors ligne.</p>
 
 ## Fonctionnalités
-- Import de vidéos, images et audios (bouton ou glisser-déposer), timeline avec règle, tête de lecture et zoom
-- **Textes** posés à n'importe quel moment : police, taille, couleur, contour, fond, position (glisser dans l'aperçu), animation d'entrée
-- **Remplacer le son d'une vidéo** par un autre fichier audio
-- **Son réglable partout** : volume (jusqu'à 200 %), coupure du son, fondus entrant/sortant ; coupe un clip en morceaux pour régler chaque partie
-- **18 animations d'images** au choix : zooms, panoramiques, Ken Burns, pulsation, fondus, glissements, rotation, tremblement
-- Vitesse des vidéos (0,5× à 2×), luminosité, contraste, saturation, cadrage des images (contenir / remplir)
-- Couper, dupliquer, supprimer, réordonner, annuler/rétablir
-- **Enregistrer et rouvrir un projet** (fichier `.kora`)
-- Lecture de toute la séquence en direct, export MP4 (480p / 720p / 1080p) ou MP3 — propulsé par FFmpeg
-- **Vidéo → MP3** : bouton « MP3 » sur chaque média de la bibliothèque, ou « Convertir cette vidéo en MP3 » dans l'inspecteur (respecte la découpe, la vitesse, le volume et les fondus), qualité 128 à 320 kbps
-- Export en étapes (un clip à la fois) : faible consommation de mémoire, priorité basse pour garder l'ordinateur fluide
+- **Formats** : 16:9 (YouTube), 9:16 (TikTok, Shorts, Reels), 1:1 et 4:5 (Instagram)
+- **Sous-titres automatiques** : le logiciel écoute les vidéos et écrit ce qui est dit en bas de l'image (hors ligne, modèle Whisper téléchargé une fois) ; import de fichiers `.srt` ; sous-titres modifiables
+- **Stickers, flèches, images et vidéos par-dessus** : 26 stickers vectoriels (couleur modifiable), 2 calques d'incrustation, position, taille, rotation, opacité, animations (fondu, pop, glissements)
+- **Deux vidéos côte à côte** (ou l'une au-dessus de l'autre) avec réglage du son de chacune
+- **Transitions** entre clips (fondu, fondu au noir, dissolution, glissements, volets, cercle, pixels, zoom)
+- **Timeline libre** : 2 pistes audio positionnables à la seconde près, glisser pour déplacer, tirer les bords pour raccourcir, vraie forme d'onde, miniatures
+- Textes animés à tout moment, glisser dans l'aperçu ; 18 animations d'images ; vitesse, couleurs, cadrage
+- **Son** : volume jusqu'à 200 %, fondus, réduction du bruit, remplacement du son d'une vidéo, normalisation à l'export
+- **Vidéo → MP3** (128 à 320 kbps), export d'un seul clip, qualité Haute/Standard/Légère, estimation de la taille
+- Projets `.kora`, **sauvegarde automatique** avec récupération après un plantage, confirmation avant de quitter
+- Export en étapes (faible consommation de mémoire), journal des erreurs
 
 ## Raccourcis
 | Touche | Action |
@@ -22,20 +22,23 @@
 | C | Couper à la tête de lecture |
 | T | Ajouter un texte |
 | Suppr | Supprimer le clip |
-| Ctrl+S | Enregistrer le projet |
+| Ctrl+C / Ctrl+V | Copier / coller un clip |
 | Ctrl+Z / Ctrl+Y | Annuler / rétablir |
+| Ctrl+S | Enregistrer le projet |
+| ← → | Reculer / avancer d'une image |
 
 ## Développement
     npm install
     npm start
+    npm test        (tests du moteur d'export avec le vrai FFmpeg)
 
 ## Créer l'installeur
     npm run dist
-Windows : `.exe` — Linux : `.AppImage` (dans `dist/`).
+Windows : `.exe` — Linux : `.AppImage` et `.deb` (dans `dist/`).
 Sur GitHub, l'action **Build KORA Studio** construit les deux et les publie dans les *Releases* quand tu pousses un tag `v*` (ex. `v0.1.0`).
 
 ## Feuille de route
-Transitions entre clips · sous-titres (.srt) · pistes multiples · enregistrement de la voix · export d'un seul clip
+Accélération par la carte graphique · séparation voix / musique · sélection multiple de clips · enregistrement de la voix
 
 ## Licence
 MIT

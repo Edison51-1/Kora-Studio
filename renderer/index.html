@@ -5,24 +5,26 @@
 <body>
 <header>
   <div class="brand"><img src="../build/icon.png" alt=""><b>KORA Studio</b></div>
-  <div class="proj">Projet sans titre</div>
+  <div class="proj"><span id="projName">Projet sans titre</span>
+    <select id="fmt" aria-label="Format de la vidéo"><option value="16:9">16:9 · YouTube</option><option value="9:16">9:16 · TikTok / Shorts / Reels</option><option value="1:1">1:1 · Carré</option><option value="4:5">4:5 · Instagram</option></select></div>
   <div class="hr">
     <button class="ib" id="bOpen" title="Ouvrir un projet" aria-label="Ouvrir un projet"><i data-i="open"></i></button>
     <button class="ib" id="bSave" title="Enregistrer le projet (Ctrl+S)" aria-label="Enregistrer le projet"><i data-i="save"></i></button>
     <span class="sep"></span>
     <button class="ib" id="bUndo" title="Annuler (Ctrl+Z)" aria-label="Annuler"><i data-i="undo"></i></button>
     <button class="ib" id="bRedo" title="Rétablir (Ctrl+Y)" aria-label="Rétablir"><i data-i="redo"></i></button>
+    <button class="ib" id="bHelp" title="Raccourcis (?)" aria-label="Raccourcis"><i data-i="help"></i></button>
     <button class="btn pri" id="bExport"><i data-i="download"></i>Exporter</button>
   </div>
 </header>
 <div id="work">
   <aside id="lib">
     <div class="ph"><span>Médias</span><button class="btn sm" id="bImport"><i data-i="upload"></i>Importer</button></div>
-    <div class="seg" id="flt"><button data-f="all" class="on">Tout</button><button data-f="video">Vidéos</button><button data-f="image">Images</button><button data-f="audio">Audios</button></div>
+    <div class="seg" id="flt"><button data-f="all" class="on">Tout</button><button data-f="video">Vidéos</button><button data-f="image">Images</button><button data-f="audio">Audios</button><button data-f="sticker">Stickers</button></div>
     <div id="grid"></div>
   </aside>
   <section id="stage">
-    <div id="screen"><video id="pv" hidden></video><img id="pi" alt="" hidden><canvas id="tcv" width="1280" height="720"></canvas><div id="empty"></div></div>
+    <div id="screen"><video id="pv" hidden></video><video id="pv2" hidden></video><img id="pi" alt="" hidden><canvas id="tcv" width="1280" height="720"></canvas><div id="empty"></div></div>
     <div class="transport">
       <span id="tc" class="tc">00:00.0</span>
       <button class="ib" id="bBack" aria-label="Début"><i data-i="skipb"></i></button>
@@ -36,6 +38,7 @@
 <section id="tl">
   <div class="tbar">
     <button class="btn" id="bText"><i data-i="type"></i>Texte<kbd>T</kbd></button>
+    <button class="btn" id="bSub"><i data-i="captions"></i>Sous-titres auto</button>
     <span class="sep"></span>
     <button class="btn" id="bCut"><i data-i="scissors"></i>Couper<kbd>C</kbd></button>
     <button class="btn" id="bDup"><i data-i="copy"></i>Dupliquer</button>
@@ -45,11 +48,15 @@
     <button class="ib" id="bRight" aria-label="Déplacer à droite"><i data-i="right"></i></button>
     <span class="grow"></span><span class="dim">Zoom</span><input type="range" id="zoom" min="10" max="140" value="40" aria-label="Zoom de la timeline">
   </div>
-  <div class="tgrid">
-    <div class="heads"><div class="corner"></div><div class="head v"><i data-i="film"></i>Vidéo</div><div class="head a"><i data-i="music"></i>Audio</div><div class="head t"><i data-i="type"></i>Texte</div></div>
+  <div class="tgv">
+    <div class="heads"><div class="corner"></div>
+      <div class="head o"><i data-i="layers"></i>Calque 2</div><div class="head o"><i data-i="layers"></i>Calque 1</div>
+      <div class="head v"><i data-i="film"></i>Vidéo</div>
+      <div class="head a"><i data-i="music"></i>Audio 1</div><div class="head a"><i data-i="music"></i>Audio 2</div>
+      <div class="head t"><i data-i="type"></i>Texte</div></div>
     <div id="scroll"><div id="content">
       <div id="ruler"></div>
-      <div id="lanes"><div class="lane v" id="lV"></div><div class="lane a" id="lA"></div><div class="lane t" id="lT"></div></div>
+      <div id="lanes"><div class="lane o" id="lO1"></div><div class="lane o" id="lO0"></div><div class="lane v" id="lV"></div><div class="lane a" id="lA0"></div><div class="lane a" id="lA1"></div><div class="lane t" id="lT"></div></div>
       <div id="playhead"><div class="knob"></div></div>
     </div></div>
   </div>
@@ -59,12 +66,38 @@
   <div id="mSet">
     <p class="dim" id="sum"></p>
     <label>Nom du fichier<input type="text" id="fname" value="ma-video" maxlength="80" spellcheck="false"></label>
+    <div id="vOpts">
+      <div class="two"><label>Qualité<select id="qual"><option value="high">Haute</option><option value="standard" selected>Standard</option><option value="light">Légère</option></select></label>
+      <label>Résolution<select id="res"><option value="720" selected>HD 720</option><option value="1080">Full HD 1080</option><option value="480">SD 480</option></select></label></div>
+    </div>
     <label id="qRow" hidden>Qualité MP3<select id="kbps"><option value="128">128 kbps (léger)</option><option value="192" selected>192 kbps (bon)</option><option value="256">256 kbps (très bon)</option><option value="320">320 kbps (maximum)</option></select></label>
-    <label id="resRow">Résolution<select id="res"><option value="720">720p HD</option><option value="1080">1080p Full HD</option><option value="480">480p</option></select></label>
+    <label class="chk"><input type="checkbox" id="norm">Normaliser le volume (même niveau sonore partout)</label>
+    <p class="hint2" id="est"></p>
     <div class="end"><button class="btn" id="mCancel">Annuler</button><button class="btn pri" id="mGo">Choisir l'emplacement…</button></div>
   </div>
   <div id="mProg" hidden><p id="pt">Export en cours…</p><div class="bar"><div id="bar"></div></div><div class="end"><button class="btn" id="pCancel">Annuler l'export</button></div></div>
 </div></div>
+<div id="sub" hidden><div class="dlg">
+  <h3>Sous-titres automatiques</h3>
+  <div id="sSet">
+    <p class="hint2">Le logiciel écoute le son de tes vidéos et écrit ce qui est dit en bas de l'image. Tout se passe sur ton ordinateur. Au premier usage, un modèle de reconnaissance est téléchargé une seule fois (Internet nécessaire).</p>
+    <div class="two"><label>Langue parlée<select id="sLang"><option value="auto">Détection auto</option><option value="french" selected>Français</option><option value="english">Anglais</option><option value="spanish">Espagnol</option><option value="portuguese">Portugais</option><option value="arabic">Arabe</option><option value="german">Allemand</option></select></label>
+    <label>Précision<select id="sModel"><option value="tiny">Rapide (≈ 40 Mo)</option><option value="base" selected>Équilibrée (≈ 75 Mo)</option><option value="small">Précise (≈ 250 Mo)</option></select></label></div>
+    <div class="end"><button class="btn" id="sClose">Fermer</button><button class="btn pri" id="sGo">Générer les sous-titres</button></div>
+    <div class="sub2"><button class="ghostb" id="sSrt">Importer un fichier .srt…</button><button class="ghostb" id="sClear">Supprimer les sous-titres automatiques</button></div>
+  </div>
+  <div id="sProg" hidden><p id="spt">Préparation…</p><div class="bar"><div id="sbar"></div></div><div class="end"><button class="btn" id="sCancel">Annuler</button></div></div>
+</div></div>
+<div id="help" hidden><div class="dlg">
+  <h3>Raccourcis</h3>
+  <table class="keys"><tr><td><kbd>Espace</kbd></td><td>Lecture / pause</td></tr><tr><td><kbd>C</kbd></td><td>Couper à la tête de lecture</td></tr><tr><td><kbd>T</kbd></td><td>Ajouter un texte</td></tr>
+  <tr><td><kbd>Suppr</kbd></td><td>Supprimer le clip</td></tr><tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>V</kbd></td><td>Copier / coller un clip</td></tr><tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd></td><td>Annuler / rétablir</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Enregistrer le projet</td></tr><tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Reculer / avancer d'une image</td></tr></table>
+  <p class="hint2">Souris : glisse un clip pour le déplacer, tire ses bords pour le raccourcir. Glisse un texte ou un sticker directement dans l'aperçu.</p>
+  <div class="end"><button class="btn pri" id="hClose">Fermer</button></div>
+</div></div>
 <div id="toast" hidden></div>
+<script src="../shared.js"></script>
+<script src="stickers.js"></script>
 <script src="app.js"></script>
 </body></html>
