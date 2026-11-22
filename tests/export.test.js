@@ -26,7 +26,8 @@ test.before(() => {
   ff('-f', 'lavfi', '-i', 'smptebars=d=6:s=640x360:r=30', '-f', 'lavfi', '-i', 'sine=frequency=880:d=6', '-shortest', '-c:v', 'libx264', '-preset', 'ultrafast', P('b.mp4'));
   ff('-f', 'lavfi', '-i', 'testsrc=d=1:s=640x360:r=1', '-frames:v', '1', P('img.png'));
   ff('-f', 'lavfi', '-i', 'color=c=red@0.6:s=256x256,format=rgba', '-frames:v', '1', P('sticker.png'));
-  ff('-f', 'lavfi', '-i', 'color=c=white@0.5:s=640x360,format=rgba', '-frames:v', '1', P('text.png'));
+  ff('-f', 'lavfi', '-i', 'color=c=white@0.5:s=200x60,format=rgba', '-frames:v', '1', P('text.png'));
+  ff('-f', 'lavfi', '-i', 'testsrc2=d=30:s=640x360:r=30', '-f', 'lavfi', '-i', 'sine=frequency=500:d=30', '-shortest', '-c:v', 'libx264', '-preset', 'ultrafast', P('long.mp4'));
   ff('-f', 'lavfi', '-i', 'sine=frequency=300:d=10', P('m.mp3'));
 });
 test.after(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -60,7 +61,7 @@ test('incrustations, texte, pistes audio libres et normalisation', async () => {
       { kind: 'sticker', type: 'over', pngPath: P('sticker.png'), at: 0.5, dur: 2, x: 70, y: 30, w: 25, rot: 20, op: 0.8, anim: 'pop' },
       { kind: 'image', type: 'over', path: P('img.png'), at: 1, dur: 2, x: 30, y: 70, w: 30, anim: 'slideup' },
       { kind: 'video', type: 'over', path: P('b.mp4'), start: 1, at: 1.5, dur: 2, x: 75, y: 75, w: 35, hasAudio: true, vol: 0.5, anim: 'fade' }],
-    text: [{ kind: 'text', pngPath: P('text.png'), at: 2, dur: 1.5, anim: 'slideleft' }],
+    text: [{ kind: 'text', pngPath: P('text.png'), pw: 200, x: 50, y: 85, at: 2, dur: 1.5, anim: 'slideleft' }, { kind: 'text', pngPath: P('text.png'), pw: 200, x: 50, y: 70, at: 0.2, dur: 3, anim: 'none' }],
     audio: [{ type: 'audio', path: P('m.mp3'), start: 0, end: 3, at: 1, vol: 0.4, fo: 1 }, { type: 'audio', path: P('m.mp3'), start: 2, end: 4, at: 2.5, vol: 0.4 }]
   }, out);
   const v = probe(out).streams.find(s => s.codec_type === 'video');
@@ -79,4 +80,15 @@ test('son pour la reconnaissance vocale (PCM 16 kHz)', async () => {
   const r = await runPlan(plan, FFMPEG, () => {}, { cancelled: false, proc: null });
   assert.ok(r.ok, r.error);
   assert.ok(Math.abs(fs.statSync(out).size / 32000 - 7) < 0.2);
+});
+
+test('beaucoup de sous-titres sur une longue vidéo (mémoire bornée)', async () => {
+  const out = P('o6.mp4'), text = [];
+  for (let i = 0; i < 30; i++) text.push({ kind: 'text', pngPath: P('text.png'), pw: 200, x: 50, y: 88, at: i * 0.95, dur: 0.9, anim: i % 5 === 0 ? 'fade' : 'none' });
+  const plan = await run({ short: 360, visual: [vid(P('long.mp4'), { end: 30, src: 30, trans: { type: 'fade', dur: 1 } }), vid(P('a.mp4'))], text,
+    over: [{ kind: 'sticker', type: 'over', pngPath: P('sticker.png'), at: 5, dur: 3, x: 80, y: 20, w: 20, anim: 'pop' }] }, out);
+  assert.ok(Math.abs(dur(out) - (34 - 1)) < 0.3, 'durée ' + dur(out));
+  assert.ok(plan.steps.length > 4, 'le long clip est traité par morceaux');
+  const maxInputs = Math.max(...plan.steps.map(s => s.args.filter(a => a === '-i').length));
+  assert.ok(maxInputs <= 14, 'entrées FFmpeg par étape : ' + maxInputs);
 });

@@ -15,6 +15,18 @@
 - Projets `.kora`, **sauvegarde automatique** avec récupération après un plantage, confirmation avant de quitter
 - Export en étapes (faible consommation de mémoire), journal des erreurs
 
+## Menu et paramètres
+- **Menu** (Fichier, Édition, Insertion, Affichage, Format, Outils, Aide) : toutes les actions y sont, même quand la fenêtre est petite.
+- **Affichage** : masquer la bibliothèque ou l'inspecteur, agrandir / réduire la timeline (ou tirer sa barre de séparation), mode compact, taille de l'interface, réinitialiser la disposition.
+- **Paramètres** (Outils › Paramètres, Ctrl+,) : fenêtre séparée avec Général, Performance, Export, Projet et Maintenance.
+
+## Performance (PC modeste)
+Le profil **Automatique** choisit un réglage adapté à l'ordinateur (un Core i5 4 cœurs / 8 Go reçoit le profil Économique) :
+- l'export traite le montage **par petits morceaux**, un à la fois (pic de mémoire d'environ 200 Mo mesuré sur 2 minutes de vidéo avec 60 sous-titres) ;
+- les sous-titres sont lus en **image unique** (pas de boucle) et le montage n'est encodé **qu'une seule fois** ;
+- les sous-titres automatiques tournent dans un **processus séparé** en priorité basse, ignorent les silences et libèrent toute la mémoire à la fin ;
+- nombre de threads, vitesse d'encodage, modèle des sous-titres et formes d'onde se règlent dans les paramètres.
+
 ## Raccourcis
 | Touche | Action |
 |---|---|

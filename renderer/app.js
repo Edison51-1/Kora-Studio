@@ -17,6 +17,7 @@ const ICO = {
   open: '<path d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H18a2 2 0 0 1 2 2v2"/>',
   captions: '<rect width="18" height="14" x="3" y="5" rx="2"/><path d="M7 15h4M15 15h2M7 11h2M13 11h4"/>',
   help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
   layers: '<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>'
 };
 const ico = n => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICO[n]}</svg>`;
@@ -32,6 +33,7 @@ const LEGACY = { fade: 'fadeinout', pan: 'panright' };
 const DEF = { vol: 1, mute: false, denoise: false, fi: 0, fo: 0, speed: 1, bright: 0, contrast: 1, sat: 1 };
 const IN = .5, OUT = .3; // animations d'entrée / sortie (identiques à l'export)
 
+let CFG = null, PERF = null, autoTimer = 0;
 const S = { fmt: '16:9', lib: [], visual: [], audio: [], over: [], text: [], sel: null, undo: [], redo: [], scale: 40, flt: 'all', dirty: false, conv: null, only: null };
 let T = 0, playing = false, last = 0, raf = 0, uid = 1, clip = null;
 const pv = $('#pv'), pv2 = $('#pv2'), pi = $('#pi'), cv = $('#tcv'), scr = $('#screen'), pa = [new Audio(), new Audio()], pRep = new Audio();
@@ -70,7 +72,7 @@ function makeThumb(it) {
     const W = 240, H = 135;
     const draw = (src, w, h) => { const k = document.createElement('canvas'); k.width = W; k.height = H; const x = k.getContext('2d'); x.fillStyle = '#000'; x.fillRect(0, 0, W, H); const s = Math.min(W / w, H / h); x.drawImage(src, (W - w * s) / 2, (H - h * s) / 2, w * s, h * s); return k.toDataURL('image/jpeg', .7); };
     if (it.type === 'image') { const im = new Image(); im.onload = () => { try { res(draw(im, im.naturalWidth, im.naturalHeight)); } catch (e) { rej(e); } im.src = ''; }; im.onerror = rej; im.src = url(it.path); }
-    else { const v = document.createElement('video'); v.muted = true; v.preload = 'auto'; v.onloadeddata = () => { v.currentTime = Math.min(.5, (it.duration || 1) / 2); }; v.onseeked = () => { try { res(draw(v, v.videoWidth, v.videoHeight)); } catch (e) { rej(e); } v.removeAttribute('src'); v.load(); }; v.onerror = rej; v.src = url(it.path); }
+    else { const v = document.createElement('video'); v.muted = true; v.preload = 'metadata'; v.onloadedmetadata = () => { v.currentTime = Math.min(.5, (it.duration || 1) / 2); }; v.onseeked = () => { try { res(draw(v, v.videoWidth, v.videoHeight)); } catch (e) { rej(e); } v.removeAttribute('src'); v.load(); }; v.onerror = rej; v.src = url(it.path); }
   });
 }
 function ensureThumb(it) { if (it.thumb || it.type === 'audio' || it._t) return; it._t = 1; thumbQ.push(it); pumpThumbs(); }
@@ -176,7 +178,8 @@ function clipEl(tr, c, s, e) {
   const th = (c.type === 'image' || c.type === 'video') ? thumbOf(c.path) : (c.type === 'over' && c.kind !== 'sticker') ? thumbOf(c.path) : null;
   if (th) d.style.backgroundImage = `linear-gradient(rgba(0,0,0,.25),rgba(0,0,0,.25)),url("${th}")`;
   if (c.type === 'over' && c.kind === 'sticker') { d.style.backgroundImage = `url("${stickerUrl(c.sid, c.color)}")`; d.style.backgroundRepeat = 'no-repeat'; d.style.backgroundPosition = 'left center'; d.style.backgroundSize = 'auto 80%'; }
-  const wv = c.type === 'audio' || (c.type === 'video' && c.hasAudio && !c.sound) || (c.type === 'over' && c.kind === 'video' && c.hasAudio) ? wave(c.type === 'over' ? { path: c.path, start: c.start, end: c.start + c.dur } : c, cw) : '';
+  const wm = (CFG && CFG.perf.waveforms) || 'audio', wantW = wm !== 'none' && (c.type === 'audio' || (wm === 'all' && ((c.type === 'video' && c.hasAudio && !c.sound) || (c.type === 'over' && c.kind === 'video' && c.hasAudio))));
+  const wv = wantW ? wave(c.type === 'over' ? { path: c.path, start: c.start, end: c.start + c.dur } : c, cw) : '';
   d.innerHTML = wv + '<div class="lab"></div><i class="hl"></i><i class="hr"></i>' + (tr === 'visual' && c.trans && c.trans.type !== 'none' && S.visual.indexOf(c) < S.visual.length - 1 ? '<i class="tr" title="Transition"></i>' : '');
   d.querySelector('.lab').textContent = clipLabel(c);
   bindClip(d, tr, c, s, e); return d;
@@ -351,9 +354,14 @@ const cs = (el, k, v) => { el._c = el._c || {}; if (el._c[k] !== v) { el._c[k] =
 const cm = (el, k, v) => { el._m = el._m || {}; if (el._m[k] !== v) { el._m[k] = v; el[k] = v; } };
 const cssFilter = c => (!c.bright && (c.contrast ?? 1) === 1 && (c.sat ?? 1) === 1) ? 'none' : `brightness(${1 + (c.bright || 0)}) contrast(${c.contrast ?? 1}) saturate(${c.sat ?? 1})`;
 const fadeVol = (c, t, s, e) => Math.min(1, c.fi > 0 ? (t - s) / c.fi : 1, c.fo > 0 ? (e - t) / c.fo : 1);
-function drawText(ctx, W, H, c, an) {
+function fitPx(ctx, c, FH, FW) { // réduit la police si le texte dépasse la largeur de l'image
+  const px0 = c.size / 100 * FH; ctx.font = `${c.bold ? '700' : '400'} ${px0}px ${c.font}`;
+  const w = Math.max(...c.text.split('\n').map(l => ctx.measureText(l).width)) + px0 * 1.4;
+  return px0 * Math.min(1, FW * .96 / Math.max(1, w));
+}
+function drawText(ctx, W, H, c, an, FH, FW) {
   ctx.save(); ctx.globalAlpha = an.a;
-  const px = c.size / 100 * H, lines = c.text.split('\n'), lh = px * 1.25;
+  const px = fitPx(ctx, c, FH || H, FW || W), lines = c.text.split('\n'), lh = px * 1.25;
   ctx.font = `${c.bold ? '700' : '400'} ${px}px ${c.font}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   const x = c.x / 100 * W + an.dx, y = c.y / 100 * H + an.dy - (lines.length - 1) * lh / 2;
   const bw = Math.max(...lines.map(l => ctx.measureText(l).width)) + px * .8, bh = lines.length * lh + px * .3;
@@ -364,6 +372,12 @@ function drawText(ctx, W, H, c, an) {
     ctx.fillStyle = c.color; ctx.fillText(l, x, yy);
   });
   ctx.restore(); return { cx: x, cy: y + (lines.length - 1) * lh / 2, w: bw, h: bh, rot: 0 };
+}
+function textBox(c, FH, FW) { // taille de l'image qui contient exactement le texte
+  const ctx = document.createElement('canvas').getContext('2d'), px = fitPx(ctx, c, FH, FW), lines = c.text.split('\n');
+  ctx.font = `${c.bold ? '700' : '400'} ${px}px ${c.font}`;
+  const w = Math.max(...lines.map(l => ctx.measureText(l).width)) + px * 1.4, h = lines.length * px * 1.25 + px * .9, ev = n => Math.max(2, Math.ceil(n / 2) * 2);
+  return { w: ev(w), h: ev(h) };
 }
 function itemAnim(c, t, W, H) { // texte et incrustations : mêmes animations que l'export
   let dx = 0, dy = 0, a = 1, s = 1;
@@ -591,6 +605,7 @@ function openExport(mode, a) {
   $('#sum').textContent = S.conv ? S.conv.name : S.only ? S.only.name : `${S.visual.length} clip(s) · ${S.over.length} incrustation(s) · ${S.audio.length} audio · ${S.text.length} texte(s) · ${S.fmt}`;
   $('#fname').value = S.conv ? fileBase(S.conv.name) : S.only ? fileBase(S.only.name) : (($('#projName').textContent || '').replace(/\.kora$/i, '').replace(/^Projet sans titre$/, '') || 'ma-video');
   $('#vOpts').hidden = audioOnly; $('#qRow').hidden = !audioOnly; $('#norm').parentElement.hidden = S.conv && !S.conv.hasAudio;
+  if (CFG) { $('#qual').value = CFG.export.quality; $('#res').value = String(CFG.export.resolution); $('#kbps').value = String(CFG.export.kbps); $('#norm').checked = CFG.export.normalize; }
   $('#est').textContent = estimate(); $('#mSet').hidden = false; $('#mProg').hidden = true; $('#modal').hidden = false;
 }
 const startConvert = a => { if (!a.hasAudio) return toast('Ce fichier ne contient pas de son'); openExport('conv', a); };
@@ -603,7 +618,7 @@ async function buildPayload(short, quality, normalize) {
   const [W, H] = KS.dims(S.fmt, short), base = { fmt: S.fmt, short, quality, normalize };
   if (S.only) return { ...base, visual: [S.only], audio: [], over: [], text: [] };
   const over = []; for (const c of [...S.over].sort((a, b) => (a.lane || 0) - (b.lane || 0))) { const o = { ...c, kind: c.kind }; if (c.kind === 'sticker') o.png = await stickerPng(c); over.push(o); }
-  const text = S.text.filter(c => c.text.trim()).map(c => { const k = document.createElement('canvas'); k.width = W; k.height = H; drawText(k.getContext('2d'), W, H, c, { dx: 0, dy: 0, a: 1 }); return { kind: 'text', at: c.at, dur: c.dur, anim: c.anim, png: k.toDataURL('image/png') }; });
+  const text = S.text.filter(c => c.text.trim()).map(c => { const m = textBox(c, H, W), k = document.createElement('canvas'); k.width = m.w; k.height = m.h; drawText(k.getContext('2d'), m.w, m.h, { ...c, x: 50, y: 50 }, { dx: 0, dy: 0, a: 1 }, H, W); return { kind: 'text', at: c.at, dur: c.dur, anim: c.anim, x: c.x, y: c.y, pw: m.w, png: k.toDataURL('image/png') }; });
   return { ...base, visual: S.visual, audio: S.audio, over, text };
 }
 $('#mGo').onclick = async () => {
@@ -638,7 +653,10 @@ function loadProject(o, name) {
 }
 async function saveProj() { const r = await kora.saveProject(projectJSON()); if (r) { $('#projName').textContent = r.name; setDirty(false); toast('Projet enregistré'); } }
 async function openProj() { const r = await kora.openProject(); if (!r) return; try { loadProject(JSON.parse(r.data), r.name); setDirty(false); } catch (e) { toast('Fichier de projet invalide'); } }
-setInterval(() => { if (S.dirty && (S.visual.length || S.audio.length || S.over.length || S.text.length)) kora.autoSave(projectJSON()); }, 20000);
+function startAutosave() {
+  clearInterval(autoTimer); if (CFG && !CFG.project.autosave) return;
+  autoTimer = setInterval(() => { if (S.dirty && (S.visual.length || S.audio.length || S.over.length || S.text.length)) kora.autoSave(projectJSON()); }, Math.max(5, (CFG && CFG.project.autosaveSec) || 20) * 1000);
+}
 
 // ---------- Commandes ----------
 $('#bPlay').onclick = toggle; $('#bBack').onclick = () => { pause(); T = 0; showFrame(); updHead(); }; $('#bFwd').onclick = () => { pause(); T = total(); showFrame(); updHead(); };
@@ -661,8 +679,64 @@ addEventListener('resize', () => { fitScreen(); renderTL(); });
 document.addEventListener('dragover', e => e.preventDefault());
 document.addEventListener('drop', e => { e.preventDefault(); if (e.dataTransfer.files.length) addFiles([...e.dataTransfer.files].map(f => kora.pathOf(f))); });
 
-setFormat('16:9', true); renderLib(); renderAll();
+// ---------- Réglages, disposition et menu ----------
+function applySettings(v, first) {
+  CFG = v.settings; PERF = v.perf; const g = CFG.general;
+  document.body.classList.toggle('compact', !!g.compact); document.body.classList.toggle('noLib', !g.showLib); document.body.classList.toggle('noInsp', !g.showInsp);
+  document.body.classList.toggle('showLib', !!g.showLib); document.body.classList.toggle('showInsp', !!g.showInsp);
+  document.documentElement.style.setProperty('--tlh', g.tlHeight > 0 ? g.tlHeight + 'px' : '36vh');
+  if (PERF && $('#sModel')) $('#sModel').value = PERF.asrModel;
+  startAutosave(); if (!first) { fitScreen(); renderTL(); }
+}
+const patch = p => kora.patchSettings(p);
+function setTlHeight(h) { h = Math.round(Math.min(Math.max(h, 170), innerHeight * .72)); document.documentElement.style.setProperty('--tlh', h + 'px'); return h; }
+$('#tlSplit').onmousedown = e => {
+  e.preventDefault(); let h = 0; const mv = ev => { h = setTlHeight(innerHeight - ev.clientY); fitScreen(); }, up = () => { removeEventListener('mousemove', mv); if (h) patch({ general: { tlHeight: h } }); };
+  addEventListener('mousemove', mv); addEventListener('mouseup', up, { once: true });
+};
+function newProject() {
+  if (S.dirty && !confirm('Des modifications ne sont pas enregistrées. Créer un nouveau projet quand même ?')) return;
+  pause(); S.visual = []; S.audio = []; S.over = []; S.text = []; S.sel = null; S.undo = []; S.redo = []; T = 0; kora.newProject(); kora.autoClear();
+  $('#projName').textContent = 'Projet sans titre'; setFormat((CFG && CFG.general.defaultFormat) || '16:9', true); setDirty(false); renderAll();
+}
+function selClip(types) { const c = cur(); if (!c || !types.includes(c.type)) { toast('Sélectionne d\'abord un clip dans la timeline'); return null; } return c; }
+async function runCmd(cmd) {
+  const g = (CFG && CFG.general) || {}, tl = () => document.getElementById('tl').offsetHeight;
+  if (cmd.startsWith('fmt:')) return setFormat(cmd.slice(4));
+  switch (cmd) {
+    case 'new': return newProject();
+    case 'open': return openProj();
+    case 'save': return saveProj();
+    case 'saveas': { const r = await kora.saveProject(projectJSON(), true); if (r) { $('#projName').textContent = r.name; setDirty(false); toast('Projet enregistré'); } return; }
+    case 'import': return addFiles(await kora.pick());
+    case 'srt': { const t = await kora.openSrt(); if (t != null) addSubs(parseSrt(t), 'fichier .srt'); return; }
+    case 'export': return $('#bExport').click();
+    case 'exportClip': { const c = selClip(['video', 'image']); if (c) startExportClip(c); return; }
+    case 'mp3': { const c = selClip(['video']); if (c) startConvert(clipToAudio(c)); return; }
+    case 'undo': return undo(); case 'redo': return redo(); case 'cut': return cutAtHead(); case 'copy': return copyClip(); case 'paste': return pasteClip(); case 'dup': return dup(); case 'del': return del();
+    case 'text': return addText();
+    case 'sticker': patch({ general: { showLib: true } }); document.querySelector('#flt [data-f=sticker]').click(); return;
+    case 'subs': return openSub();
+    case 'overlay': { const ps = await kora.pick(); for (const p of ps) { const i = await kora.probe(p); if (!i.error && i.type !== 'audio') addOverlay({ kind: i.type, path: p, name: p.split(/[\\/]/).pop(), src: i.duration, hasAudio: i.hasAudio }); } return; }
+    case 'pair': { const c = selClip(['video']); if (!c) return; const p = await pickVideo(); if (p) { snap(); c.pair = { path: p.path, name: p.name, src: p.duration, start: 0, hasAudio: p.hasAudio, vol: 1, mute: false, mode: 'h' }; renderAll(); } return; }
+    case 'toggleLib': return patch({ general: { showLib: !g.showLib } });
+    case 'toggleInsp': return patch({ general: { showInsp: !g.showInsp } });
+    case 'tlUp': return patch({ general: { tlHeight: setTlHeight(tl() + 60) } });
+    case 'tlDown': return patch({ general: { tlHeight: setTlHeight(tl() - 60) } });
+    case 'compact': return patch({ general: { compact: !g.compact } });
+    case 'zoomIn': return patch({ general: { uiZoom: Math.min(1.5, +((g.uiZoom || 1) + .1).toFixed(2)) } });
+    case 'zoomOut': return patch({ general: { uiZoom: Math.max(.7, +((g.uiZoom || 1) - .1).toFixed(2)) } });
+    case 'zoomReset': return patch({ general: { uiZoom: 1 } });
+    case 'resetLayout': return patch({ general: { tlHeight: 0, showLib: true, showInsp: true, compact: false, uiZoom: 1 } });
+    case 'help': $('#help').hidden = false; return;
+  }
+}
+kora.onMenu(runCmd); kora.onSettings(v => applySettings(v));
+$('#bSettings').onclick = () => kora.openSettings();
+
 (async () => {
+  applySettings(await kora.getSettings(), true);
+  setFormat((CFG && CFG.general.defaultFormat) || '16:9', true); renderLib(); renderAll();
   const a = await kora.autoLoad();
   if (a) { try { const o = JSON.parse(a); if ((o.visual || []).length + (o.audio || []).length + (o.over || []).length + (o.text || []).length && confirm('Un projet non enregistré a été retrouvé (sauvegarde automatique). Veux-tu le récupérer ?')) { loadProject(o, 'Projet récupéré'); setDirty(true); } else kora.autoClear(); } catch (e) { kora.autoClear(); } }
 })();

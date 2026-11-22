@@ -14,13 +14,14 @@
     <button class="ib" id="bUndo" title="Annuler (Ctrl+Z)" aria-label="Annuler"><i data-i="undo"></i></button>
     <button class="ib" id="bRedo" title="Rétablir (Ctrl+Y)" aria-label="Rétablir"><i data-i="redo"></i></button>
     <button class="ib" id="bHelp" title="Raccourcis (?)" aria-label="Raccourcis"><i data-i="help"></i></button>
-    <button class="btn pri" id="bExport"><i data-i="download"></i>Exporter</button>
+    <button class="btn pri" id="bExport"><i data-i="download"></i><span class="t">Exporter</span></button>
+    <button class="ib" id="bSettings" title="Paramètres (Ctrl+,)" aria-label="Paramètres"><i data-i="gear"></i></button>
   </div>
 </header>
 <div id="work">
   <aside id="lib">
     <div class="ph"><span>Médias</span><button class="btn sm" id="bImport"><i data-i="upload"></i>Importer</button></div>
-    <div class="seg" id="flt"><button data-f="all" class="on">Tout</button><button data-f="video">Vidéos</button><button data-f="image">Images</button><button data-f="audio">Audios</button><button data-f="sticker">Stickers</button></div>
+    <div class="seg" id="flt"><button data-f="all" class="on">Tout</button><button data-f="video">Vidéo</button><button data-f="image">Image</button><button data-f="audio">Audio</button><button data-f="sticker">Stickers</button></div>
     <div id="grid"></div>
   </aside>
   <section id="stage">
@@ -35,14 +36,15 @@
   </section>
   <aside id="insp"><div class="ph"><span>Inspecteur</span></div><div id="ibody"></div></aside>
 </div>
+<div id="tlSplit" title="Glisse pour agrandir ou réduire la timeline"></div>
 <section id="tl">
   <div class="tbar">
-    <button class="btn" id="bText"><i data-i="type"></i>Texte<kbd>T</kbd></button>
-    <button class="btn" id="bSub"><i data-i="captions"></i>Sous-titres auto</button>
+    <button class="btn" id="bText" title="Ajouter un texte (T)"><i data-i="type"></i><span class="t">Texte</span><kbd>T</kbd></button>
+    <button class="btn" id="bSub" title="Sous-titres automatiques"><i data-i="captions"></i><span class="t">Sous-titres auto</span></button>
     <span class="sep"></span>
-    <button class="btn" id="bCut"><i data-i="scissors"></i>Couper<kbd>C</kbd></button>
-    <button class="btn" id="bDup"><i data-i="copy"></i>Dupliquer</button>
-    <button class="btn" id="bDel"><i data-i="trash"></i>Supprimer<kbd>Suppr</kbd></button>
+    <button class="btn" id="bCut" title="Couper (C)"><i data-i="scissors"></i><span class="t">Couper</span><kbd>C</kbd></button>
+    <button class="btn" id="bDup" title="Dupliquer"><i data-i="copy"></i><span class="t">Dupliquer</span></button>
+    <button class="btn" id="bDel" title="Supprimer (Suppr)"><i data-i="trash"></i><span class="t">Supprimer</span><kbd>Suppr</kbd></button>
     <span class="sep"></span>
     <button class="ib" id="bLeft" aria-label="Déplacer à gauche"><i data-i="left"></i></button>
     <button class="ib" id="bRight" aria-label="Déplacer à droite"><i data-i="right"></i></button>

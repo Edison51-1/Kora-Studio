@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+<title>Paramètres</title><link rel="stylesheet" href="style.css"></head>
+<body class="settingsbody"><div class="settings">
+<nav><button data-p="g" class="on">Général</button><button data-p="p">Performance</button><button data-p="e">Export</button><button data-p="j">Projet</button><button data-p="m">Maintenance</button></nav>
+<main><div class="pages">
+ <div class="page" id="pg">
+  <h2>Général</h2>
+  <div class="row2"><label>Format des nouveaux projets<select id="gFmt"><option value="16:9">16:9 · YouTube</option><option value="9:16">9:16 · TikTok / Shorts / Reels</option><option value="1:1">1:1 · Carré</option><option value="4:5">4:5 · Instagram</option></select></label>
+  <label>Taille de l'interface<select id="gZoom"><option value="0.8">80 %</option><option value="0.9">90 %</option><option value="1">100 %</option><option value="1.1">110 %</option><option value="1.25">125 %</option></select></label></div>
+  <label>Dossier d'export par défaut<div class="row2" style="grid-template-columns:1fr auto"><input type="text" id="gDir" placeholder="Dossier proposé à l'enregistrement" spellcheck="false"><button class="btn" id="gPick">Parcourir…</button></div></label>
+  <label class="chk"><input type="checkbox" id="gCompact">Mode compact (interface plus serrée, pour les petits écrans)</label>
+  <label class="chk"><input type="checkbox" id="gLib">Afficher la bibliothèque</label>
+  <label class="chk"><input type="checkbox" id="gInsp">Afficher l'inspecteur</label>
+ </div>
+ <div class="page" id="pp" hidden>
+  <h2>Performance</h2>
+  <div class="hwbox" id="hw">Analyse de l'ordinateur…</div>
+  <label>Profil<select id="pProfile"><option value="auto">Automatique (conseillé)</option><option value="eco">Économique — ordinateur modeste (peu de RAM / processeur)</option><option value="balanced">Équilibré</option><option value="max">Performance — ordinateur puissant</option></select></label>
+  <p class="hint2">Le profil règle le nombre de threads, la vitesse d'encodage et le modèle des sous-titres. Les réglages avancés ci-dessous, s'ils sont changés, passent avant le profil.</p>
+  <div class="row2"><label>Threads d'export<select id="pThreads"><option value="0">Auto (profil)</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="6">6</option><option value="8">8</option></select></label>
+  <label>Vitesse d'encodage<select id="pPreset"><option value="">Auto (profil)</option><option value="ultrafast">Ultra rapide (fichiers plus gros)</option><option value="superfast">Très rapide</option><option value="veryfast">Rapide</option><option value="faster">Standard</option><option value="medium">Lente (fichiers plus petits)</option></select></label></div>
+  <div class="row2"><label>Modèle des sous-titres<select id="pAsr"><option value="">Auto (profil)</option><option value="tiny">Rapide (≈ 40 Mo)</option><option value="base">Équilibré (≈ 75 Mo)</option><option value="small">Précis (≈ 250 Mo)</option></select></label>
+  <label>Formes d'onde dans la timeline<select id="pWave"><option value="audio">Pistes audio seulement</option><option value="all">Audio et vidéos</option><option value="none">Aucune (plus léger)</option></select></label></div>
+  <label class="chk"><input type="checkbox" id="pLow">Priorité basse pour l'export et les sous-titres (l'ordinateur reste fluide)</label>
+ </div>
+ <div class="page" id="pe" hidden>
+  <h2>Export</h2>
+  <div class="row2"><label>Qualité vidéo<select id="eQual"><option value="high">Haute</option><option value="standard">Standard</option><option value="light">Légère</option></select></label>
+  <label>Résolution<select id="eRes"><option value="480">SD 480</option><option value="720">HD 720</option><option value="1080">Full HD 1080</option></select></label></div>
+  <label>Qualité MP3<select id="eKbps"><option value="128">128 kbps</option><option value="192">192 kbps</option><option value="256">256 kbps</option><option value="320">320 kbps</option></select></label>
+  <label class="chk"><input type="checkbox" id="eNorm">Normaliser le volume par défaut</label>
+ </div>
+ <div class="page" id="pj" hidden>
+  <h2>Projet</h2>
+  <label class="chk"><input type="checkbox" id="jAuto">Sauvegarde automatique (récupération après un plantage)</label>
+  <label>Intervalle de sauvegarde automatique<select id="jSec"><option value="10">10 secondes</option><option value="20">20 secondes</option><option value="60">1 minute</option><option value="120">2 minutes</option></select></label>
+  <label class="chk"><input type="checkbox" id="jQuit">Demander confirmation avant de quitter avec des modifications non enregistrées</label>
+ </div>
+ <div class="page" id="pm" hidden>
+  <h2>Maintenance</h2>
+  <div class="row2" style="grid-template-columns:auto auto"><button class="btn" id="mLogs">Ouvrir le dossier des journaux</button><button class="btn" id="mModels">Supprimer les modèles de sous-titres téléchargés</button></div>
+  <p class="hint2">Les modèles sont retéléchargés automatiquement au prochain usage des sous-titres.</p>
+  <button class="btn" id="mReset" style="align-self:flex-start">Réinitialiser tous les paramètres</button>
+ </div>
+</div>
+<div class="foot"><span class="dim" id="state"></span><span class="grow"></span><button class="btn" id="bClose">Fermer</button><button class="btn pri" id="bSaveSet">Enregistrer</button></div>
+</main></div>
+<script src="settings.js"></script>
+</body></html>

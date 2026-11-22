@@ -29,8 +29,8 @@ const ZP = {
 };
 const SLIDE = { slideleft: [`-W*${Q}`, '0'], slideright: [`W*${Q}`, '0'], slideup: ['0', `H*${Q}`], slidedown: ['0', `-H*${Q}`] };
 
-const BASE = ['-hide_banner', '-nostdin', '-loglevel', 'error', '-progress', 'pipe:1', '-nostats', '-y'];
-const venc = crf => ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', String(crf), '-pix_fmt', 'yuv420p'];
+const base = p => ['-hide_banner', '-nostdin', '-loglevel', 'error', '-progress', 'pipe:1', '-nostats', '-y', '-filter_threads', String((p.perf && p.perf.filterThreads) || 1), '-filter_complex_threads', String((p.perf && p.perf.filterThreads) || 1)];
+const venc = (crf, p) => ['-c:v', 'libx264', '-preset', (p.perf && p.perf.preset) || 'veryfast', '-crf', String(crf), '-pix_fmt', 'yuv420p', ...((p.perf && p.perf.threads) ? ['-threads', String(p.perf.threads)] : [])];
 const AENC = ['-c:a', 'aac', '-b:a', '192k', '-ar', '44100', '-ac', '2'];
 const PCM = ['-c:a', 'pcm_s16le', '-ar', '44100', '-ac', '2']; // son exact dans les fichiers temporaires
 const fwd = p => p.replace(/\\/g, '/');
@@ -60,85 +60,147 @@ function imageChain(c, d, W, H, add, f) {
   }
 }
 
-// Construit les entrées et filtres d'un clip complet → étiquettes [v0] et [a0] de durée d
-function clipGraph(c, d, W, H, add, f) {
-  const sp = c.speed || 1, E = eqf(c);
-  const silence = () => `anullsrc=r=44100:cl=stereo:d=${d}`;
-  if (c.type !== 'video') { imageChain(c, d, W, H, add, f); f.push(`${silence()}[a0]`); return; }
-  const k0 = add('-ss', String(c.start), '-t', String(+(c.end - c.start).toFixed(3)), '-i', c.path);
-  const tail = `tpad=stop_mode=clone:stop_duration=2,trim=duration=${d},setpts=PTS-STARTPTS`;
-  let la; // audio principal (gauche)
-  if (c.sound && c.sound.path) { const ks = add('-ss', String(c.sound.start || 0), '-t', String(d), '-i', c.sound.path); la = `[${ks}:a]${aprep(c)},apad,atrim=0:${d},asetpts=PTS-STARTPTS,${volf(c)}`; }
-  else if (c.hasAudio) la = `[${k0}:a]${aprep(c)}${sp !== 1 ? `,atempo=${sp}` : ''},apad,atrim=0:${d},asetpts=PTS-STARTPTS,${volf(c)}`;
-  else la = silence();
-  if (!c.pair) {
-    f.push(`[${k0}:v]setpts=(PTS-STARTPTS)/${sp},${fitContain(W, H)},setsar=1,fps=${FPS},format=yuv420p${E},${tail}[v0]`);
-    f.push(`${la},${fades(c, d) || 'anull'}[a0]`);
-    return;
-  }
-  // deux vidéos côte à côte (mode 'h') ou l'une au-dessus de l'autre (mode 'v')
-  const p2 = c.pair, vert = p2.mode === 'v';
-  const pw = vert ? W : Math.floor(W / 4) * 2, ph = vert ? Math.floor(H / 4) * 2 : H;
-  const half = `${fitCover(pw, ph)},setsar=1,fps=${FPS},format=yuv420p`;
-  const k1 = add('-ss', String(p2.start || 0), '-t', String(d), '-i', p2.path);
-  f.push(`[${k0}:v]setpts=(PTS-STARTPTS)/${sp},${half}${E},${tail}[pl]`);
-  f.push(`[${k1}:v]setpts=PTS-STARTPTS,${half},${tail}[pr]`);
-  f.push(`[pl][pr]${vert ? 'vstack' : 'hstack'}=inputs=2,${fitContain(W, H)},setsar=1,format=yuv420p[v0]`);
-  const ra = p2.hasAudio && !p2.mute ? `[${k1}:a]${AF},apad,atrim=0:${d},asetpts=PTS-STARTPTS,volume=${p2.vol ?? 1}` : silence();
-  f.push(`${la}[la]`.replace(/\[la\]$/, '[la]'), `${ra}[ra]`);
-  f.push(`[la][ra]amix=inputs=2:duration=longest:normalize=0,${fades(c, d) || 'anull'}[a0]`);
+// Fondus de volume valables pour un morceau commençant à p0 dans un clip de durée D
+function fadeVol(c, p0, D) {
+  const terms = [];
+  if (c.fi > 0) terms.push(`(t+${p0})/${c.fi}`);
+  if (c.fo > 0) terms.push(`(${D}-${p0}-t)/${c.fo}`);
+  if (!terms.length) return '';
+  return `volume='max(0,${terms.reduce((a, b) => `min(${a},${b})`, '1')})':eval=frame`;
+}
+const intersect = (items, a, b) => items.filter(it => it.at < b - 0.03 && it.at + it.dur > a + 0.03);
+
+// Incrustations (textes, stickers, images, vidéos) posées sur un morceau [t0, t0+pd) de la timeline.
+// Les images fixes sont lues en UNE seule image (pas de boucle) : très peu de mémoire.
+function composeOverlays(items, t0, pd, W, H, add, f, main) {
+  const aud = []; let u = 0;
+  items.forEach((it, j) => {
+    const at = it.at, et = it.at + it.dur, d = it.dur, an = it.anim || 'none', loc = x => +(x - t0).toFixed(3), atL = loc(at);
+    const tw = it.kind === 'text' ? Math.max(2, it.pw) : Math.max(2, Math.round(W * (it.w || 30) / 100 / 2) * 2);
+    const rad = ((it.rot || 0) * Math.PI / 180).toFixed(4);
+    const place = (a, b, offX, offY) => {
+      const x = `${(W * (it.x ?? 50) / 100).toFixed(1)}-w/2${offX}`, y = `${(H * (it.y ?? 50) / 100).toFixed(1)}-h/2${offY}`;
+      return `overlay=x='${x}':y='${y}':enable='between(t,${loc(a)},${loc(b)})':format=auto`;
+    };
+    const geo = (popFi) => (popFi ? `scale=w='max(2,trunc(${tw}*(0.5+0.5*min(1,t/${popFi}))/2)*2)':h=-2:eval=frame` : `scale=${tw}:-2`)
+      + (it.rot ? `,rotate=a=${rad}:c=none:ow='rotw(${rad})':oh='roth(${rad})'` : '') + ((it.op ?? 1) < 1 ? `,colorchannelmixer=aa=${it.op}` : '');
+    const slide = fi => { const p = `pow(1-min(1,max(0,(t-${atL})/${fi})),2)`, dx = (0.15 * W).toFixed(1), dy = (0.15 * H).toFixed(1); return { slideleft: [`-${dx}*${p}`, ''], slideright: [`+${dx}*${p}`, ''], slideup: ['', `+${dy}*${p}`], slidedown: ['', `-${dy}*${p}`] }[an] || ['', '']; };
+    const emit = (chain, a, b, ox, oy) => { const l1 = `ov${j}_${u++}`, l2 = `o${j}_${u++}`; f.push(`${chain}[${l1}]`, `${main}[${l1}]${place(a, b, ox, oy)}[${l2}]`); main = `[${l2}]`; };
+    if (it.kind === 'video') {
+      const off0 = Math.max(0, t0 - at), a = Math.max(at, t0), b = Math.min(et, t0 + pd), dd = +(b - a).toFixed(3);
+      if (dd < 0.03) return;
+      const k = add('-ss', String(+((it.start || 0) + off0).toFixed(3)), '-t', String(dd), '-i', it.path);
+      let ch = `[${k}:v]setpts=PTS-STARTPTS+${off0.toFixed(3)}/TB,format=rgba,${geo(an === 'pop' ? IN : 0)}`;
+      if (an !== 'none') ch += `,fade=t=in:st=0:d=${IN}:alpha=1,fade=t=out:st=${Math.max(0, d - OUT).toFixed(3)}:d=${OUT}:alpha=1`;
+      ch += `,setpts=PTS+${(loc(a) - off0).toFixed(3)}/TB`;
+      const [ox, oy] = slide(IN); emit(ch, a, b, ox, oy);
+      if (it.hasAudio && !it.mute) { f.push(`[${k}:a]${AF},volume=${it.vol ?? 1},apad,atrim=0:${dd},adelay=${Math.round(loc(a) * 1000)}:all=1[oa${j}]`); aud.push(`[oa${j}]`); }
+      return;
+    }
+    const src = it.pngPath || it.path, fi = Math.min(IN, d * 0.6), fo = Math.min(OUT, d * 0.4);
+    const segs = an === 'none' ? [['mid', at, et]] : [['intro', at, at + fi], ['mid', at + fi, et - fo], ['outro', et - fo, et]];
+    segs.forEach(([mode, s, e]) => {
+      const a = Math.max(s, t0), b = Math.min(e, t0 + pd); if (b - a < 0.03) return;
+      if (mode === 'mid') { const k = add('-i', src); emit(`[${k}:v]format=rgba,${geo(0)},setpts=PTS-STARTPTS+${loc(a)}/TB`, a, b, '', ''); return; }
+      const sd = mode === 'intro' ? fi : fo, k = add('-loop', '1', '-framerate', String(FPS), '-t', String(+sd.toFixed(3)), '-i', src), off = a - s;
+      let ch = `[${k}:v]format=rgba,${geo(mode === 'intro' && an === 'pop' ? fi : 0)},${mode === 'intro' ? `fade=t=in:st=0:d=${fi.toFixed(3)}:alpha=1` : `fade=t=out:st=0:d=${fo.toFixed(3)}:alpha=1`}`;
+      ch += off > 0.001 ? `,trim=start=${off.toFixed(3)},setpts=PTS-STARTPTS+${loc(a)}/TB` : `,setpts=PTS+${loc(a)}/TB`;
+      const [ox, oy] = mode === 'intro' ? slide(fi) : ['', '']; emit(ch, a, b, ox, oy);
+    });
+  });
+  return { main, aud };
 }
 
-function segmentStep(c, i, ctx) {
-  const { W, H, tmp, tin, tout, crf } = ctx, d = dur(c);
+// Un morceau (tête, corps ou queue) d'un clip vidéo : seule la partie utile est décodée
+function videoPiece(c, key, i, n, p0, p1, ctx) {
+  const { W, H, tmp, crf, items, S0, P } = ctx, d = +(p1 - p0).toFixed(3), D = dur(c), sp = c.speed || 1, E = eqf(c);
   const ins = [], f = [], add = (...x) => { ins.push(x); return ins.length - 1; };
-  clipGraph(c, d, W, H, add, f);
+  const tail = `tpad=stop_mode=clone:stop_duration=2,trim=duration=${d},setpts=PTS-STARTPTS`, silence = `anullsrc=r=44100:cl=stereo:d=${d}`;
+  const k0 = add('-ss', String(+(c.start + p0 * sp).toFixed(3)), '-t', String(+(d * sp).toFixed(3)), '-i', c.path);
+  let la;
+  if (c.sound && c.sound.path) { const ks = add('-ss', String(+((c.sound.start || 0) + p0).toFixed(3)), '-t', String(d), '-i', c.sound.path); la = `[${ks}:a]${aprep(c)},apad,atrim=0:${d},asetpts=PTS-STARTPTS,${volf(c)}`; }
+  else if (c.hasAudio) la = `[${k0}:a]${aprep(c)}${sp !== 1 ? `,atempo=${sp}` : ''},apad,atrim=0:${d},asetpts=PTS-STARTPTS,${volf(c)}`;
+  else la = silence;
+  const fv = fadeVol(c, p0, D);
+  if (!c.pair) {
+    f.push(`[${k0}:v]setpts=(PTS-STARTPTS)/${sp},${fitContain(W, H)},setsar=1,fps=${FPS},format=yuv420p${E},${tail}[v0]`, `${la}${fv ? ',' + fv : ''}[a0]`);
+  } else {
+    const p2 = c.pair, vert = p2.mode === 'v', pw = vert ? W : Math.floor(W / 4) * 2, ph = vert ? Math.floor(H / 4) * 2 : H;
+    const half = `${fitCover(pw, ph)},setsar=1,fps=${FPS},format=yuv420p`;
+    const k1 = add('-ss', String(+((p2.start || 0) + p0).toFixed(3)), '-t', String(d), '-i', p2.path);
+    f.push(`[${k0}:v]setpts=(PTS-STARTPTS)/${sp},${half}${E},${tail}[pl]`, `[${k1}:v]setpts=PTS-STARTPTS,${half},${tail}[pr]`,
+      `[pl][pr]${vert ? 'vstack' : 'hstack'}=inputs=2,${fitContain(W, H)},setsar=1,format=yuv420p[v0]`,
+      `${la}[la]`, `${p2.hasAudio && !p2.mute ? `[${k1}:a]${AF},apad,atrim=0:${d},asetpts=PTS-STARTPTS,volume=${p2.vol ?? 1}` : silence}[ra]`,
+      `[la][ra]amix=inputs=2:duration=longest:normalize=0${fv ? ',' + fv : ''}[a0]`);
+  }
+  let vOut = '[v0]', aOut = '[a0]';
+  const its = intersect(items, ctx.S0 + p0, ctx.S0 + p1);
+  if (its.length) {
+    const r = composeOverlays(its, ctx.S0 + p0, d, W, H, add, f, '[v0]'); vOut = r.main;
+    if (r.aud.length) { f.push(`[a0]${r.aud.join('')}amix=inputs=${1 + r.aud.length}:duration=first:normalize=0[af]`); aOut = '[af]'; }
+  }
+  const file = path.join(tmp, `${key}${i}_${n}.mkv`);
+  const args = [...base(P), ...ins.flat(), '-filter_complex', f.join(';'), '-map', vOut, '-map', aOut, ...venc(crf, P), '-r', String(FPS), ...PCM, '-t', String(d), '-f', 'matroska', file];
+  return { args, dur: d, w: d, file };
+}
+
+// Clip image : un seul calcul d'animation, puis découpe en tête / corps / queue
+function imageStep(c, i, ctx, l) {
+  const { W, H, tmp, crf, items, S0, P } = ctx, d = dur(c), tin = l.tin, tout = l.tout;
+  const ins = [], f = [], add = (...x) => { ins.push(x); return ins.length - 1; };
+  imageChain(c, d, W, H, add, f); f.push(`anullsrc=r=44100:cl=stereo:d=${d}[a0]`);
+  let vOut = '[v0]', aOut = '[a0]';
+  const its = intersect(items, S0, S0 + d);
+  if (its.length) { const r = composeOverlays(its, S0, d, W, H, add, f, '[v0]'); vOut = r.main; if (r.aud.length) { f.push(`[a0]${r.aud.join('')}amix=inputs=${1 + r.aud.length}:duration=first:normalize=0[af]`); aOut = '[af]'; } }
   const parts = [];
   if (tin > 0) parts.push({ k: 'h', s: 0, e: tin });
   parts.push({ k: 'b', s: tin, e: +(d - tout).toFixed(3) });
   if (tout > 0) parts.push({ k: 't', s: +(d - tout).toFixed(3), e: d });
   const maps = [], files = {};
-  if (parts.length === 1) {
-    files.b = path.join(tmp, `b${i}.mkv`);
-    maps.push(['[v0]', '[a0]', d, files.b]);
-  } else {
+  if (parts.length === 1) { files.b = path.join(tmp, `b${i}_0.mkv`); maps.push([vOut, aOut, d, files.b]); }
+  else {
     const n = parts.length, lab = pre => parts.map((_, j) => `[${pre}${j}]`).join('');
-    f.push(`[v0]split=${n}${lab('vs')}`, `[a0]asplit=${n}${lab('as')}`);
+    f.push(`${vOut}split=${n}${lab('vs')}`, `${aOut}asplit=${n}${lab('as')}`);
     parts.forEach((p, j) => {
       f.push(`[vs${j}]trim=${p.s}:${p.e},setpts=PTS-STARTPTS[vo${j}]`, `[as${j}]atrim=${p.s}:${p.e},asetpts=PTS-STARTPTS[ao${j}]`);
-      files[p.k] = path.join(tmp, `${p.k}${i}.mkv`);
-      maps.push([`[vo${j}]`, `[ao${j}]`, +(p.e - p.s).toFixed(3), files[p.k]]);
+      files[p.k] = path.join(tmp, `${p.k}${i}_0.mkv`); maps.push([`[vo${j}]`, `[ao${j}]`, +(p.e - p.s).toFixed(3), files[p.k]]);
     });
   }
-  const args = [...BASE, ...ins.flat(), '-filter_complex', f.join(';')];
-  maps.forEach(([v, a, t, file]) => args.push('-map', v, '-map', a, ...venc(crf), '-r', String(FPS), ...PCM, '-t', String(t), '-f', 'matroska', file));
-  return { args, dur: d, w: d, files };
+  const args = [...base(P), ...ins.flat(), '-filter_complex', f.join(';')];
+  maps.forEach(([v, a, t, file]) => args.push('-map', v, '-map', a, ...venc(crf, P), '-r', String(FPS), ...PCM, '-t', String(t), '-f', 'matroska', file));
+  return { steps: [{ args, dur: d, w: d }], h: files.h, t: files.t, bodies: [files.b] };
 }
 
-function transStep(tFile, hFile, td, type, tmp, i, crf) {
+function clipPieces(c, i, l, ctx) {
+  if (c.type !== 'video') return imageStep(c, i, ctx, l);
+  const d = dur(c), b0 = l.tin, b1 = +(d - l.tout).toFixed(3), res = { steps: [], bodies: [] };
+  // découpe en fenêtres : au plus ~10 entrées FFmpeg et 20 s par étape (la mémoire reste faible)
+  const weight = (a, b) => intersect(ctx.items, ctx.S0 + a, ctx.S0 + b).reduce((s, it) => s + (it.kind !== 'video' && it.anim && it.anim !== 'none' ? 3 : 1), 0);
+  const body = []; let p = b0;
+  while (p < b1 - 0.001) {
+    let e = Math.min(b1, p + 20);
+    if (weight(p, e) > 10) { let lo = p + 1; e = Math.min(b1, lo); while (e < Math.min(b1, p + 20) && weight(p, Math.min(b1, e + 1)) <= 10) e = Math.min(b1, e + 1); e = Math.max(e, Math.min(b1, p + 1)); }
+    body.push([+p.toFixed(3), +e.toFixed(3)]); p = e;
+  }
+  if (body.length > 1 && body[body.length - 1][1] - body[body.length - 1][0] < 0.5) { const last = body.pop(); body[body.length - 1][1] = last[1]; }
+  if (l.tin > 0) { const s = videoPiece(c, 'h', i, 0, 0, l.tin, ctx); res.steps.push(s); res.h = s.file; }
+  body.forEach(([p0, p1], n) => { const s = videoPiece(c, 'b', i, n, p0, p1, ctx); res.steps.push(s); res.bodies.push(s.file); });
+  if (l.tout > 0) { const s = videoPiece(c, 't', i, 0, b1, d, ctx); res.steps.push(s); res.t = s.file; }
+  return res;
+}
+
+function transStep(tFile, hFile, td, type, tmp, i, crf, P) {
   const file = path.join(tmp, `x${i}.mkv`);
   const f = `[0:v][1:v]xfade=transition=${type}:duration=${td}:offset=0,format=yuv420p[v];[0:a][1:a]acrossfade=d=${td}[a]`;
-  return { args: [...BASE, '-i', tFile, '-i', hFile, '-filter_complex', f, '-map', '[v]', '-map', '[a]', ...venc(crf), '-r', String(FPS), ...PCM, '-f', 'matroska', file], dur: td, w: td, file };
-}
-
-// animation d'entrée/sortie commune au texte et aux incrustations
-function animBits(an, at, d, W, H) {
-  const bits = { fade: '', x: '0', y: '0', pop: false };
-  if (!an || an === 'none') return bits;
-  bits.fade = `,fade=t=in:st=0:d=${IN}:alpha=1,fade=t=out:st=${Math.max(0, d - OUT).toFixed(3)}:d=${OUT}:alpha=1`;
-  const p = `pow(1-min(1,max(0,(t-${at})/${IN})),2)`, dx = (0.15 * W).toFixed(1), dy = (0.15 * H).toFixed(1);
-  if (an === 'slideleft') bits.x = `-${dx}*${p}`; else if (an === 'slideright') bits.x = `${dx}*${p}`;
-  else if (an === 'slideup') bits.y = `${dy}*${p}`; else if (an === 'slidedown') bits.y = `-${dy}*${p}`;
-  else if (an === 'pop') bits.pop = true;
-  return bits;
+  return { args: [...base(P), '-i', tFile, '-i', hFile, '-filter_complex', f, '-map', '[v]', '-map', '[a]', ...venc(crf, P), '-r', String(FPS), ...PCM, '-f', 'matroska', file], dur: td, w: td, file };
 }
 
 function buildPlan(p, out, tmp) {
-  const crf = QUAL[p.quality] || 22, [W, H] = KS.dims(p.fmt || '16:9', p.short || p.height || 720);
+  const P = p, crf = QUAL[p.quality] || 22, [W, H] = KS.dims(p.fmt || '16:9', p.short || p.height || 720);
   const vis = p.visual || [], aud = p.audio || [], steps = [];
   const aClip = (c, k) => { const d = dur(c), sp = c.speed || 1; return `[${k}:a]${aprep(c)}${sp !== 1 ? `,atempo=${sp}` : ''},${afx(c, d)},adelay=${Math.round((c.at || 0) * 1000)}:all=1`; };
   if (!vis.length) { // audio seul (MP3, M4A, WAV)
-    const a = [...BASE], f = []; let k = 0, tot = 0;
+    const a = [...base(p)], f = []; let k = 0, tot = 0;
     aud.forEach((c, j) => { a.push('-ss', String(c.start), '-t', String(+(c.end - c.start).toFixed(3)), '-i', c.path); f.push(`${aClip(c, k++)}[b${j}]`); tot = Math.max(tot, (c.at || 0) + dur(c)); });
     f.push(aud.length > 1 ? `${aud.map((_, j) => `[b${j}]`).join('')}amix=inputs=${aud.length}:duration=longest:normalize=0[bg]` : '[b0]anull[bg]');
     a.push('-filter_complex', f.join(';'), '-map', '[bg]');
@@ -147,65 +209,32 @@ function buildPlan(p, out, tmp) {
     return { steps, list: null, total: tot };
   }
   const items = [...(p.over || []), ...(p.text || [])].filter(x => x.pngPath || x.path);
-  const reencode = items.length > 0, segCrf = reencode ? Math.min(16, crf) : crf;
-  const lay = KS.layoutVisual(vis), total = lay[lay.length - 1].e, order = [];
-  const tFiles = [], hFiles = [];
+  const lay = KS.layoutVisual(vis), total = lay[lay.length - 1].e, order = [], parts = [];
   lay.forEach((l, i) => {
-    const s = segmentStep(l.c, i, { W, H, tmp, tin: l.tin, tout: l.tout, crf: segCrf });
-    steps.push(s); tFiles[i] = s.files.t; hFiles[i] = s.files.h;
+    const r = clipPieces(l.c, i, l, { W, H, tmp, crf, items, S0: l.s, P });
+    steps.push(...r.steps); parts[i] = r;
   });
   lay.forEach((l, i) => {
-    order.push(steps[i].files.b);
-    if (l.tout > 0) {
-      const type = vis[i].trans.type, x = transStep(tFiles[i], hFiles[i + 1], l.tout, type, tmp, i, segCrf);
-      steps.push(x); order.push(x.file);
-    }
+    order.push(...parts[i].bodies);
+    if (l.tout > 0) { const x = transStep(parts[i].t, parts[i + 1].h, l.tout, vis[i].trans.type, tmp, i, crf, P); steps.push(x); order.push(x.file); }
   });
   const list = { path: path.join(tmp, 'list.txt'), content: order.map(f => `file '${fwd(f).replace(/'/g, "'\\''")}'`).join('\n') };
-  const a = [...BASE, '-f', 'concat', '-safe', '0', '-i', fwd(list.path)], f = [];
-  let k = 1, main = '[0:v]', hasVis = false;
-  const add = (...x) => { a.push(...x); return k++; };
+  const a = [...base(p), '-f', 'concat', '-safe', '0', '-i', fwd(list.path)], f = [];
+  let k = 1; const add = (...x) => { a.push(...x); return k++; };
   const mix = ['[0:a]'];
-  items.forEach((it, j) => {
-    const at = +(it.at || 0).toFixed(3), et = +Math.min(total, at + it.dur).toFixed(3), d = +(et - at).toFixed(3);
-    if (d <= 0.05 || at >= total) return;
-    hasVis = true;
-    const an = animBits(it.anim, at, d, W, H); let ch, x = an.x, y = an.y;
-    if (it.kind === 'text') {
-      const ki = add('-loop', '1', '-framerate', String(FPS), '-t', String(d), '-i', it.pngPath);
-      ch = `[${ki}:v]format=rgba${an.fade}`;
-    } else {
-      const tw = Math.max(2, Math.round(W * (it.w || 30) / 100 / 2) * 2), rad = ((it.rot || 0) * Math.PI / 180).toFixed(4);
-      let ki; const isVid = it.kind === 'video';
-      if (isVid) ki = add('-ss', String(it.start || 0), '-t', String(d), '-i', it.path); else ki = add('-loop', '1', '-framerate', String(FPS), '-t', String(d), '-i', it.pngPath || it.path);
-      ch = `[${ki}:v]${isVid ? 'setpts=PTS-STARTPTS,' : ''}format=rgba,` + (an.pop ? `scale=w='max(2,trunc(${tw}*(0.5+0.5*min(1,t/${IN}))/2)*2)':h=-2:eval=frame` : `scale=${tw}:-2`);
-      if (it.rot) ch += `,rotate=a=${rad}:c=none:ow='rotw(${rad})':oh='roth(${rad})'`;
-      if ((it.op ?? 1) < 1) ch += `,colorchannelmixer=aa=${it.op}`;
-      ch += an.pop ? `,fade=t=in:st=0:d=${IN}:alpha=1,fade=t=out:st=${Math.max(0, d - OUT).toFixed(3)}:d=${OUT}:alpha=1` : an.fade;
-      x = `${(W * (it.x ?? 50) / 100).toFixed(1)}-w/2${an.x !== '0' ? '+' + an.x : ''}`; y = `${(H * (it.y ?? 50) / 100).toFixed(1)}-h/2${an.y !== '0' ? '+' + an.y : ''}`;
-      if (isVid && it.hasAudio && !it.mute) { f.push(`[${ki}:a]${AF},volume=${it.vol ?? 1},apad,atrim=0:${d},adelay=${Math.round(at * 1000)}:all=1[oa${j}]`); mix.push(`[oa${j}]`); }
-    }
-    f.push(`${ch},setpts=PTS+${at}/TB[ov${j}]`);
-    f.push(`${main}[ov${j}]overlay=x='${x}':y='${y}':enable='between(t,${at},${et})':eof_action=pass:format=auto[o${j}]`);
-    main = `[o${j}]`;
-  });
-  aud.forEach((c, j) => {
-    const ki = add('-ss', String(c.start), '-t', String(+(c.end - c.start).toFixed(3)), '-i', c.path);
-    f.push(`${aClip(c, ki)}[ba${j}]`); mix.push(`[ba${j}]`);
-  });
+  aud.forEach((c, j) => { const ki = add('-ss', String(c.start), '-t', String(+(c.end - c.start).toFixed(3)), '-i', c.path); f.push(`${aClip(c, ki)}[ba${j}]`); mix.push(`[ba${j}]`); });
   let ao = null;
   if (mix.length > 1) { f.push(`${mix.join('')}amix=inputs=${mix.length}:duration=first:normalize=0[am]`); ao = '[am]'; }
   if (p.normalize) { f.push(`${ao || '[0:a]'}loudnorm=I=-16:TP=-1.5:LRA=11[an]`); ao = '[an]'; }
   if (f.length) a.push('-filter_complex', f.join(';'));
-  if (hasVis) a.push('-map', main, ...venc(crf)); else a.push('-map', '0:v', '-c:v', 'copy');
-  a.push('-map', ao || '0:a', ...AENC, '-movflags', '+faststart', out);
-  steps.push({ args: a, dur: total, w: hasVis ? total : Math.max(0.2, total * 0.1) });
+  a.push('-map', '0:v', '-c:v', 'copy', '-map', ao || '0:a', ...AENC, '-movflags', '+faststart', out);
+  steps.push({ args: a, dur: total, w: Math.max(0.2, total * 0.1) });
   return { steps, list, total };
 }
 
 // Son du montage (pistes vidéo uniquement) en PCM 16 kHz mono, pour la reconnaissance vocale
 function buildSpeechPlan(p, out) {
-  const vis = p.visual || [], lay = KS.layoutVisual(vis), a = [...BASE], f = []; let k = 0; const mix = [];
+  const vis = p.visual || [], lay = KS.layoutVisual(vis), a = [...base(p)], f = []; let k = 0; const mix = [];
   lay.forEach(({ c, s }, i) => {
     const d = dur(c), sp = c.speed || 1, ms = Math.round(s * 1000);
     if (c.type !== 'video') return;

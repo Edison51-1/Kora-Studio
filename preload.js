@@ -16,6 +16,12 @@ contextBridge.exposeInMainWorld('kora', {
   autoClear: () => ipcRenderer.send('auto:clear'),
   setDirty: v => ipcRenderer.send('dirty', v),
   logPath: () => ipcRenderer.invoke('log:path'),
+  getSettings: () => ipcRenderer.invoke('settings:get'),
+  patchSettings: patch => ipcRenderer.invoke('settings:set', patch),
+  onSettings: cb => ipcRenderer.on('settings', (_, v) => cb(v)),
+  openSettings: () => ipcRenderer.send('settings:open'),
+  onMenu: cb => ipcRenderer.on('menu', (_, c) => cb(c)),
+  newProject: () => ipcRenderer.send('proj:new'),
   cancel: () => ipcRenderer.send('cancel'),
   onProgress: cb => ipcRenderer.on('progress', (_, v) => cb(v)),
   pathOf: f => webUtils.getPathForFile(f)
