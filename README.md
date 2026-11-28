@@ -27,6 +27,13 @@ Le profil **Automatique** choisit un réglage adapté à l'ordinateur (un Core i
 - les sous-titres automatiques tournent dans un **processus séparé** en priorité basse, ignorent les silences et libèrent toute la mémoire à la fin ;
 - nombre de threads, vitesse d'encodage, modèle des sous-titres et formes d'onde se règlent dans les paramètres.
 
+## Sous-titres automatiques : si ça ne marche pas
+Une fenêtre montre chaque étape (son, moteur, modèle, transcription). En cas d'erreur, elle explique la cause en français et propose :
+- **Tester la connexion** aux serveurs des modèles ;
+- un **serveur de secours** (miroir) essayé automatiquement ; réglable dans Paramètres › Performance ;
+- **Installer le modèle à la main** : « Ouvrir le dossier des modèles » crée un fichier LISEZ-MOI avec les fichiers à copier ;
+- **Copier les détails** pour les envoyer au développeur, et ouvrir le journal.
+
 ## Raccourcis
 | Touche | Action |
 |---|---|

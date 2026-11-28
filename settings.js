@@ -1,7 +1,7 @@
 // Paramètres de l'application et profils de performance (fonctions pures, testées)
 const DEFAULTS = {
   general: { defaultFormat: '16:9', exportDir: '', uiZoom: 1, compact: false, showLib: true, showInsp: true, tlHeight: 0 },
-  perf: { profile: 'auto', threads: 0, preset: '', waveforms: 'audio', asrModel: '', asrThreads: 0, lowPriority: true },
+  perf: { profile: 'auto', threads: 0, preset: '', waveforms: 'audio', asrModel: '', asrThreads: 0, lowPriority: true, modelHost: 'auto' },
   export: { quality: 'standard', resolution: 720, normalize: false, kbps: 192 },
   project: { autosave: true, autosaveSec: 20, confirmQuit: true }
 };

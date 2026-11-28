@@ -78,17 +78,24 @@
     <div class="end"><button class="btn" id="mCancel">Annuler</button><button class="btn pri" id="mGo">Choisir l'emplacement…</button></div>
   </div>
   <div id="mProg" hidden><p id="pt">Export en cours…</p><div class="bar"><div id="bar"></div></div><div class="end"><button class="btn" id="pCancel">Annuler l'export</button></div></div>
+  <div id="mRes" hidden></div>
 </div></div>
-<div id="sub" hidden><div class="dlg">
+<div id="sub" hidden><div class="dlg wide">
   <h3>Sous-titres automatiques</h3>
   <div id="sSet">
     <p class="hint2">Le logiciel écoute le son de tes vidéos et écrit ce qui est dit en bas de l'image. Tout se passe sur ton ordinateur. Au premier usage, un modèle de reconnaissance est téléchargé une seule fois (Internet nécessaire).</p>
     <div class="two"><label>Langue parlée<select id="sLang"><option value="auto">Détection auto</option><option value="french" selected>Français</option><option value="english">Anglais</option><option value="spanish">Espagnol</option><option value="portuguese">Portugais</option><option value="arabic">Arabe</option><option value="german">Allemand</option></select></label>
     <label>Précision<select id="sModel"><option value="tiny">Rapide (≈ 40 Mo)</option><option value="base" selected>Équilibrée (≈ 75 Mo)</option><option value="small">Précise (≈ 250 Mo)</option></select></label></div>
     <div class="end"><button class="btn" id="sClose">Fermer</button><button class="btn pri" id="sGo">Générer les sous-titres</button></div>
-    <div class="sub2"><button class="ghostb" id="sSrt">Importer un fichier .srt…</button><button class="ghostb" id="sClear">Supprimer les sous-titres automatiques</button></div>
+    <div class="sub2"><button class="ghostb" id="sSrt">Importer un fichier .srt…</button><button class="ghostb" id="sClear">Supprimer les sous-titres automatiques</button><button class="ghostb" id="sDiag">Tester la connexion</button></div>
+    <div id="sDiagOut" class="hint2"></div>
   </div>
-  <div id="sProg" hidden><p id="spt">Préparation…</p><div class="bar"><div id="sbar"></div></div><div class="end"><button class="btn" id="sCancel">Annuler</button></div></div>
+  <div id="sProg" hidden>
+    <ul class="steps" id="sSteps"><li data-s="audio"><b class="ic">○</b>Préparation du son</li><li data-s="module"><b class="ic">○</b>Moteur de reconnaissance</li><li data-s="model"><b class="ic">○</b>Modèle de langue</li><li data-s="run"><b class="ic">○</b>Transcription</li></ul>
+    <p id="spt">Préparation…</p><div class="bar"><div id="sbar"></div></div>
+    <div class="end"><button class="btn" id="sCancel">Annuler</button></div>
+  </div>
+  <div id="sRes" hidden></div>
 </div></div>
 <div id="help" hidden><div class="dlg">
   <h3>Raccourcis</h3>

@@ -1,6 +1,6 @@
 {
   "name": "kora-studio",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "KORA Studio - éditeur vidéo, image et audio",
   "author": {
     "name": "Jonard",
@@ -9,7 +9,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node --test tests/export.test.js tests/settings.test.js",
+    "test": "node --test tests/export.test.js tests/settings.test.js tests/asr.test.js",
     "dist": "electron-builder --publish never"
   },
   "dependencies": {
@@ -33,6 +33,7 @@
       "shared.js",
       "settings-preload.js",
       "settings.js",
+      "asr-errors.js",
       "asr.js",
       "asr-worker.js",
       "renderer/**",

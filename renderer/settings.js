@@ -5,7 +5,7 @@ function fill(v) {
   $('#gFmt').value = s.general.defaultFormat; $('#gZoom').value = String(s.general.uiZoom); $('#gDir').value = s.general.exportDir;
   $('#gCompact').checked = s.general.compact; $('#gLib').checked = s.general.showLib; $('#gInsp').checked = s.general.showInsp;
   $('#pProfile').value = s.perf.profile; $('#pThreads').value = String(s.perf.threads); $('#pPreset').value = s.perf.preset; $('#pAsr').value = s.perf.asrModel;
-  $('#pWave').value = s.perf.waveforms; $('#pLow').checked = s.perf.lowPriority;
+  $('#pWave').value = s.perf.waveforms; $('#pLow').checked = s.perf.lowPriority; $('#pHost').value = s.perf.modelHost;
   $('#eQual').value = s.export.quality; $('#eRes').value = String(s.export.resolution); $('#eKbps').value = String(s.export.kbps); $('#eNorm').checked = s.export.normalize;
   $('#jAuto').checked = s.project.autosave; $('#jSec').value = String(s.project.autosaveSec); $('#jQuit').checked = s.project.confirmQuit;
   $('#hw').innerHTML = `Ton ordinateur : <b>${v.hw.cores} cœurs</b> · <b>${v.hw.ramGB} Go de RAM</b><br>Profil appliqué : <b>${names[p.profile]}</b> — export sur <b>${p.threads}</b> thread(s), vitesse « ${p.preset} », sous-titres « ${p.asrModel} » sur ${p.asrThreads} thread(s).`;
@@ -14,7 +14,7 @@ const num = (id, d) => { const n = parseFloat($(id).value); return isNaN(n) ? d 
 function collect() {
   return {
     general: { defaultFormat: $('#gFmt').value, uiZoom: num('#gZoom', 1), exportDir: $('#gDir').value.trim(), compact: $('#gCompact').checked, showLib: $('#gLib').checked, showInsp: $('#gInsp').checked },
-    perf: { profile: $('#pProfile').value, threads: num('#pThreads', 0), preset: $('#pPreset').value, asrModel: $('#pAsr').value, waveforms: $('#pWave').value, lowPriority: $('#pLow').checked },
+    perf: { profile: $('#pProfile').value, threads: num('#pThreads', 0), preset: $('#pPreset').value, asrModel: $('#pAsr').value, waveforms: $('#pWave').value, lowPriority: $('#pLow').checked, modelHost: $('#pHost').value },
     export: { quality: $('#eQual').value, resolution: num('#eRes', 720), kbps: num('#eKbps', 192), normalize: $('#eNorm').checked },
     project: { autosave: $('#jAuto').checked, autosaveSec: num('#jSec', 20), confirmQuit: $('#jQuit').checked }
   };

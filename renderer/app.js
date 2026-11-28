@@ -567,24 +567,58 @@ function parseSrt(txt) {
   });
   return out;
 }
-function addSubs(chunks, label) {
-  const cl = subClips(chunks); if (!cl.length) return toast('Aucun sous-titre trouvé');
-  snap(); S.text = S.text.filter(c => !c.sub).concat(cl); renderAll(); toast(`${cl.length} sous-titres ajoutés${label ? ' (' + label + ')' : ''}. Tu peux les modifier dans la piste Texte.`);
+function addSubs(chunks, label, quiet) {
+  const cl = subClips(chunks); if (!cl.length) { if (!quiet) toast('Aucun sous-titre trouvé'); return 0; }
+  snap(); S.text = S.text.filter(c => !c.sub).concat(cl); renderAll(); if (!quiet) toast(`${cl.length} sous-titres ajoutés${label ? ' (' + label + ')' : ''}. Tu peux les modifier dans la piste Texte.`); return cl.length;
 }
-function openSub() { pause(); $('#sSet').hidden = false; $('#sProg').hidden = true; $('#sub').hidden = false; }
+// Fenêtre de résultat (succès ou erreur) commune à l'export et aux sous-titres
+function copyText(t) { try { navigator.clipboard.writeText(t).then(() => toast('Détails copiés')).catch(() => fallbackCopy(t)); } catch (e) { fallbackCopy(t); } }
+function fallbackCopy(t) { const x = document.createElement('textarea'); x.value = t; document.body.appendChild(x); x.select(); try { document.execCommand('copy'); toast('Détails copiés'); } catch (e) { toast('Copie impossible'); } x.remove(); }
+function showResult(box, o) {
+  box.hidden = false; box.innerHTML = `<div class="resbox ${o.ok ? 'ok' : 'err'}"><div class="resh"><span>${o.ok ? '✓' : '⚠'}</span><span class="rt"></span></div><p class="resp"></p><ul class="advice" hidden></ul><details class="det" hidden><summary>Détails techniques</summary><pre></pre></details><div class="end"></div></div>`;
+  box.querySelector('.rt').textContent = o.title; box.querySelector('.resp').textContent = o.text || '';
+  const ul = box.querySelector('.advice'); (o.advice || []).forEach(t => { const li = document.createElement('li'); li.textContent = t; ul.appendChild(li); }); ul.hidden = !(o.advice && o.advice.length);
+  if (o.detail) { box.querySelector('.det').hidden = false; box.querySelector('pre').textContent = o.detail; }
+  const end = box.querySelector('.end');
+  (o.buttons || []).forEach(b => { const e = document.createElement('button'); e.className = 'btn' + (b.primary ? ' pri' : ''); e.textContent = b.label; e.onclick = b.fn; end.appendChild(e); });
+}
+// ---------- Sous-titres automatiques (fenêtre) ----------
+const SUBSTEPS = ['audio', 'module', 'model', 'run'];
+const subView = v => { $('#sSet').hidden = v !== 'set'; $('#sProg').hidden = v !== 'prog'; $('#sRes').hidden = v !== 'res'; };
+function setStep(stage, text, v, fail) {
+  const i = SUBSTEPS.indexOf(stage); if (i < 0) return;
+  $$('#sSteps li').forEach((li, j) => { const st = fail && j === i ? 'fail' : j < i ? 'done' : j === i ? 'active' : ''; li.className = st; li.querySelector('.ic').textContent = st === 'fail' ? '✗' : st === 'done' ? '✓' : st === 'active' ? '●' : '○'; });
+  if (text) $('#spt').textContent = text; const b = $('#sbar'); b.classList.toggle('indet', v == null && !fail); b.style.width = v == null ? '100%' : Math.round(v * 100) + '%';
+}
+function openSub() { pause(); subView('set'); $('#sDiagOut').textContent = ''; $('#sub').hidden = false; }
 $('#bSub').onclick = openSub; $('#sClose').onclick = () => $('#sub').hidden = true;
 $('#sClear').onclick = () => { const n = S.text.filter(c => c.sub).length; if (!n) return toast('Aucun sous-titre automatique'); snap(); S.text = S.text.filter(c => !c.sub); renderAll(); toast('Sous-titres supprimés'); };
 $('#sSrt').onclick = async () => { const t = await kora.openSrt(); if (t == null) return; $('#sub').hidden = true; addSubs(parseSrt(t), 'fichier .srt'); };
-$('#sGo').onclick = async () => {
-  if (!S.visual.some(c => c.type === 'video' && (c.hasAudio || c.sound))) return toast('Ajoute une vidéo avec du son sur la timeline');
-  $('#sSet').hidden = true; $('#sProg').hidden = false; $('#sbar').style.width = '0'; $('#spt').textContent = 'Préparation…';
-  const r = await kora.startSubtitles({ visual: S.visual }, $('#sModel').value, $('#sLang').value);
-  $('#sub').hidden = true;
-  if (!r.ok) return toast(r.error === 'Annulé' ? 'Sous-titres annulés' : 'Sous-titres impossibles : ' + r.error + (/fetch|network|ENOTFOUND|huggingface/i.test(r.error) ? ' — vérifie ta connexion Internet (téléchargement du modèle).' : ''));
-  addSubs(r.chunks);
+$('#sDiag').onclick = async () => {
+  const out = $('#sDiagOut'); out.textContent = 'Test en cours…';
+  const r = await kora.diagModels();
+  out.innerHTML = ''; r.forEach(x => { const d = document.createElement('div'); d.textContent = (x.ok ? '✓ ' : '✗ ') + x.host + ' — ' + (x.ok ? `joignable (${x.ms} ms)` : (x.why || 'inaccessible') + ' (' + x.error + ')'); out.appendChild(d); });
+  if (!r.some(x => x.ok)) { const d = document.createElement('div'); d.textContent = 'Aucun serveur joignable : vérifie ta connexion, essaie un VPN, ou installe le modèle à la main (voir « Ouvrir le dossier des modèles » en cas d\'erreur).'; out.appendChild(d); }
 };
+async function runSubs() {
+  if (!S.visual.some(c => c.type === 'video' && (c.hasAudio || c.sound))) return showResult($('#sRes'), { ok: false, title: 'Aucune vidéo avec du son', text: 'Il n\'y a rien à écouter sur la timeline.', advice: ['Ajoute une vidéo qui contient du son, puis relance.'], buttons: [{ label: 'Fermer', fn: () => $('#sub').hidden = true }] }), subView('res');
+  subView('prog'); setStep('audio', 'Préparation du son…', 0);
+  const r = await kora.startSubtitles({ visual: S.visual }, $('#sModel').value, $('#sLang').value);
+  if (r.ok) {
+    const n = addSubs(r.chunks, '', true);
+    subView('res'); return showResult($('#sRes'), n
+      ? { ok: true, title: `${n} sous-titres ajoutés`, text: 'Ils apparaissent dans la piste Texte, en bas de l\'image. Clique sur l\'un d\'eux pour corriger le texte, la taille ou la position.', buttons: [{ label: 'Voir le résultat', primary: true, fn: () => $('#sub').hidden = true }] }
+      : { ok: false, title: 'Aucune parole détectée', text: 'Le logiciel n\'a rien compris dans cette vidéo.', advice: ['Vérifie la langue choisie.', 'Essaie la précision « Précise » si la parole est faible ou couverte par la musique.'], buttons: [{ label: 'Réessayer', primary: true, fn: openSub }, { label: 'Fermer', fn: () => $('#sub').hidden = true }] });
+  }
+  if (r.error === 'Annulé') { $('#sub').hidden = true; return toast('Sous-titres annulés'); }
+  setStep(r.stage || 'model', null, 0, true); subView('res');
+  const info = r.info || { title: 'Erreur', advice: [] };
+  showResult($('#sRes'), { ok: false, title: info.title, text: 'Les sous-titres n\'ont pas pu être créés.', advice: info.advice, detail: r.detail || r.error,
+    buttons: [{ label: 'Réessayer', primary: true, fn: openSub }, { label: 'Copier les détails', fn: () => copyText(r.detail || r.error) }, { label: 'Ouvrir le dossier des modèles', fn: () => kora.openModels() }, { label: 'Journal', fn: () => kora.openLogs() }, { label: 'Fermer', fn: () => $('#sub').hidden = true }] });
+}
+$('#sGo').onclick = runSubs;
 $('#sCancel').onclick = () => kora.cancelSubtitles();
-kora.onSubtitleProgress(m => { $('#spt').textContent = m.text; $('#sbar').style.width = (m.v == null ? 100 : Math.round(m.v * 100)) + '%'; });
+kora.onSubtitleProgress(m => setStep(m.stage, m.text, m.v));
 
 // ---------- Export et conversion ----------
 const fileBase = n => (n || 'audio').replace(/\.[^.]+$/, '');
@@ -606,7 +640,7 @@ function openExport(mode, a) {
   $('#fname').value = S.conv ? fileBase(S.conv.name) : S.only ? fileBase(S.only.name) : (($('#projName').textContent || '').replace(/\.kora$/i, '').replace(/^Projet sans titre$/, '') || 'ma-video');
   $('#vOpts').hidden = audioOnly; $('#qRow').hidden = !audioOnly; $('#norm').parentElement.hidden = S.conv && !S.conv.hasAudio;
   if (CFG) { $('#qual').value = CFG.export.quality; $('#res').value = String(CFG.export.resolution); $('#kbps').value = String(CFG.export.kbps); $('#norm').checked = CFG.export.normalize; }
-  $('#est').textContent = estimate(); $('#mSet').hidden = false; $('#mProg').hidden = true; $('#modal').hidden = false;
+  $('#est').textContent = estimate(); $('#mSet').hidden = false; $('#mProg').hidden = true; $('#mRes').hidden = true; $('#modal').hidden = false;
 }
 const startConvert = a => { if (!a.hasAudio) return toast('Ce fichier ne contient pas de son'); openExport('conv', a); };
 const startExportClip = c => openExport('clip', { ...JSON.parse(JSON.stringify(c)), trans: null });
@@ -625,13 +659,18 @@ $('#mGo').onclick = async () => {
   const name = ($('#fname').value || '').replace(/[\\/:*?"<>|]/g, '').replace(/\.(mp4|mp3|m4a|wav)$/i, '').trim() || 'ma-video';
   const conv = S.conv, audioOnly = !!conv || (!S.only && !S.visual.length);
   const out = await kora.save(audioOnly ? 'mp3' : 'mp4', name); if (!out) return;
-  $('#bar').style.width = '0'; $('#pt').textContent = 'Export en cours…'; $('#mSet').hidden = true; $('#mProg').hidden = false;
+  $('#bar').style.width = '0'; $('#pt').textContent = 'Export en cours…'; $('#mSet').hidden = true; $('#mRes').hidden = true; $('#mProg').hidden = false;
   let r;
   try {
     const kbps = +$('#kbps').value;
     r = await kora.exportProject(conv ? { visual: [], audio: [conv], kbps } : { ...(await buildPayload(+$('#res').value, $('#qual').value, $('#norm').checked)), kbps }, out);
   } catch (e) { r = { ok: false, error: e.message }; }
-  S.conv = null; S.only = null; $('#modal').hidden = true; toast(r.ok ? 'Export terminé : ' + out : 'Erreur : ' + r.error);
+  S.conv = null; S.only = null; $('#mProg').hidden = true;
+  const close = () => $('#modal').hidden = true;
+  if (r.ok) showResult($('#mRes'), { ok: true, title: 'Export terminé', text: out, buttons: [{ label: 'Afficher dans le dossier', primary: true, fn: () => kora.showInFolder(out) }, { label: 'Fermer', fn: close }] });
+  else if (r.error === 'Export annulé') { close(); toast('Export annulé'); }
+  else showResult($('#mRes'), { ok: false, title: 'L\'export a échoué', text: (r.error || '').slice(0, 300), advice: ['Réessaie avec une qualité « Légère » ou une résolution plus basse.', 'Si le problème continue, copie les détails et envoie-les moi.'], detail: r.detail || r.error,
+    buttons: [{ label: 'Copier les détails', fn: () => copyText(r.detail || r.error) }, { label: 'Journal', fn: () => kora.openLogs() }, { label: 'Fermer', primary: true, fn: close }] });
 };
 $('#pCancel').onclick = () => kora.cancel();
 kora.onProgress(v => { $('#bar').style.width = Math.round(v * 100) + '%'; $('#pt').textContent = 'Export en cours… ' + Math.round(v * 100) + ' %'; });

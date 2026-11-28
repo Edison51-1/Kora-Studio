@@ -7,6 +7,7 @@ const { buildPlan, buildSpeechPlan } = require('./export');
 const { runPlan } = require('./runner');
 const asr = require('./asr');
 const cfg = require('./settings');
+const { classify, hostsFor, HF, MIRROR } = require('./asr-errors');
 
 const fix = p => p.replace('app.asar' + path.sep, 'app.asar.unpacked' + path.sep);
 const FFMPEG = fix(require('ffmpeg-static'));
@@ -35,6 +36,12 @@ function saveSettings(patch) {
   if (win && !win.isDestroyed()) win.webContents.setZoomFactor(Math.min(1.5, Math.max(.7, settings.general.uiZoom || 1)));
 }
 const snapshot = () => ({ settings, perf: perf(), hw: hw() });
+const modelsDir = () => path.join(app.getPath('userData'), 'models');
+function techDetail(title, lines) {
+  const h = hw(), p = perf();
+  return [`KORA Studio ${app.getVersion()} — ${title}`, `Système : ${process.platform} ${process.arch} · Electron ${process.versions.electron} · Node ${process.versions.node}`,
+    `Ordinateur : ${h.cores} cœurs, ${h.ramGB} Go de RAM · profil ${p.profile} (threads ${p.threads}, vitesse ${p.preset}, sous-titres ${p.asrModel})`, ...lines].join('\n');
+}
 
 function createWindow() {
   loadSettings();
@@ -94,9 +101,9 @@ ipcMain.handle('export', async (_, project, out) => {
     project.perf = perf();
     const plan = buildPlan(project, out, tmp);
     const r = await runPlan(plan, FFMPEG, v => win && !win.isDestroyed() && win.webContents.send('progress', v), hold, { lowPriority: project.perf.lowPriority });
-    if (!r.ok && r.error !== 'Export annulé') { log('EXPORT', r.error); r.error += ' (journal : ' + logPath() + ')'; }
+    if (!r.ok && r.error !== 'Export annulé') { log('EXPORT', r.error); r.detail = techDetail('échec de l\'export', ['Erreur : ' + r.error, 'Format ' + project.fmt + ', ' + project.short + 'p, qualité ' + project.quality]); }
     return r;
-  } catch (e) { log('EXPORT', e.stack || e.message); return { ok: false, error: e.message }; }
+  } catch (e) { log('EXPORT', e.stack || e.message); return { ok: false, error: e.message, detail: techDetail('échec de l\'export', [String(e.stack || e.message)]) }; }
   finally { job = null; fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
@@ -123,23 +130,44 @@ ipcMain.handle('peaks', (_, file) => {
 // Sous-titres automatiques
 ipcMain.handle('asr:start', async (_, project, model, lang) => {
   if (asrJob) return { ok: false, error: 'Une transcription est déjà en cours' };
-  const hold = asrJob = { cancelled: false, proc: null, worker: null };
+  const hold = asrJob = { cancelled: false, proc: null, kill: null };
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kora-asr-')), send = m => win && !win.isDestroyed() && win.webContents.send('asr:progress', m);
+  const fail = (stage, error, extra = []) => {
+    const info = classify({ stage, message: error, code: '' });
+    log('ASR', stage, error); return { ok: false, error, stage, info, modelsDir: modelsDir(), detail: techDetail('échec des sous-titres', [`Étape : ${stage}`, `Erreur : ${error}`, ...extra]) };
+  };
   try {
     const pf = perf(), raw = path.join(tmp, 'speech.raw'), plan = buildSpeechPlan({ ...project, perf: pf }, raw);
-    if (!plan) return { ok: false, error: 'Aucune vidéo avec du son sur la timeline.' };
+    if (!plan) return fail('audio', 'Aucune vidéo avec du son sur la timeline.');
     send({ stage: 'audio', text: 'Préparation du son…', v: 0 });
     const r = await runPlan(plan, FFMPEG, v => send({ stage: 'audio', text: 'Préparation du son…', v }), hold, { lowPriority: pf.lowPriority });
-    if (!r.ok) return r;
-    const res = await asr.transcribe(raw, { model: model || pf.asrModel, lang, cache: path.join(app.getPath('userData'), 'models'), threads: pf.asrThreads, lowPriority: pf.lowPriority }, m => {
-      if (m.type === 'progress' && m.p) send({ stage: 'model', text: m.p.status === 'progress' ? 'Téléchargement du modèle (une seule fois)…' : 'Chargement du modèle…', v: (m.p.progress || 0) / 100 });
-      else if (m.type === 'status') send({ stage: 'run', text: m.text, v: m.v == null ? null : m.v });
+    if (!r.ok) return r.error === 'Export annulé' ? { ok: false, error: 'Annulé' } : fail('audio', r.error);
+    const hosts = hostsFor(settings.perf.modelHost), mdl = model || pf.asrModel;
+    const res = await asr.transcribe(raw, { model: mdl, lang, cache: modelsDir(), threads: pf.asrThreads, lowPriority: pf.lowPriority, hosts }, m => {
+      if (m.type === 'stage') send({ stage: m.stage, text: m.text, v: null });
+      else if (m.type === 'progress' && m.p && m.p.status === 'progress') send({ stage: 'model', text: `Téléchargement du modèle (une seule fois)… ${Math.round(m.p.progress || 0)} %`, v: (m.p.progress || 0) / 100 });
+      else if (m.type === 'status') send({ stage: m.stage || 'run', text: m.text, v: m.v == null ? null : m.v });
     }, hold);
-    if (!res.ok) log('ASR', res.error);
-    return res;
-  } catch (e) { log('ASR', e.stack || e.message); return { ok: false, error: e.message }; }
+    if (res.ok || res.error === 'Annulé') return res;
+    const info = classify({ stage: res.stage, message: res.error, code: res.code });
+    log('ASR', res.stage, res.error, res.code || '', res.stack || '');
+    return { ok: false, error: res.error, stage: res.stage, info, modelsDir: modelsDir(),
+      detail: techDetail('échec des sous-titres', [`Étape : ${res.stage || '?'}`, `Modèle : whisper-${mdl} · serveurs : ${hosts.join(', ')}`, `Erreur : ${res.error}`, res.code ? `Code : ${res.code}` : '', res.stack ? `Trace :\n${res.stack}` : ''].filter(Boolean)) };
+  } catch (e) { return fail('run', e.message, [String(e.stack || '')]); }
   finally { asrJob = null; fs.rmSync(tmp, { recursive: true, force: true }); }
 });
+// Test de la connexion au serveur des modèles
+ipcMain.handle('asr:diag', async () => {
+  const one = async host => {
+    const t0 = Date.now();
+    try { const r = await fetch(host + 'Xenova/whisper-tiny/resolve/main/config.json', { signal: AbortSignal.timeout(8000) }); return { host: new URL(host).hostname, ok: r.ok, status: r.status, ms: Date.now() - t0 }; }
+    catch (e) { const code = (e.cause && (e.cause.code || e.cause.message)) || e.message; return { host: new URL(host).hostname, ok: false, error: code, why: classify({ stage: 'model', message: String(code) }).title }; }
+  };
+  return Promise.all([HF, MIRROR].map(one));
+});
+const modelsReadme = () => 'Installer un modèle de sous-titres à la main\r\n\r\nSi le téléchargement automatique est impossible, tu peux copier les fichiers du modèle depuis un autre ordinateur ou un téléphone :\r\n1. Sur un appareil connecté, ouvre https://huggingface.co/Xenova/whisper-base/tree/main (ou le site miroir https://hf-mirror.com/Xenova/whisper-base/tree/main).\r\n2. Télécharge : config.json, generation_config.json, preprocessor_config.json, tokenizer.json, tokenizer_config.json, et dans le dossier onnx : encoder_model_quantized.onnx et decoder_model_merged_quantized.onnx.\r\n3. Mets-les dans : Xenova/whisper-base/ (les fichiers .onnx dans Xenova/whisper-base/onnx/) à l\'intérieur de ce dossier.\r\n4. Relance les sous-titres avec la précision « Équilibrée ».\r\n(Pour « Rapide », remplace base par tiny ; pour « Précis », par small.)\r\n';
+ipcMain.handle('models:open', () => { try { fs.mkdirSync(path.join(modelsDir(), 'Xenova', 'whisper-base', 'onnx'), { recursive: true }); fs.writeFileSync(path.join(modelsDir(), 'LISEZ-MOI.txt'), modelsReadme()); } catch (e) { /* ok */ } return shell.openPath(modelsDir()); });
+ipcMain.on('shell:show', (_, p) => { if (p && fs.existsSync(p)) shell.showItemInFolder(p); });
 ipcMain.on('asr:cancel', () => { if (asrJob) { asrJob.cancelled = true; if (asrJob.proc) asrJob.proc.kill('SIGKILL'); if (asrJob.kill) asrJob.kill(); } });
 ipcMain.handle('srt:open', async () => {
   const r = await dialog.showOpenDialog(win, { properties: ['openFile'], filters: [{ name: 'Sous-titres SRT', extensions: ['srt'] }] });
@@ -173,7 +201,7 @@ ipcMain.handle('dir:pick', async () => { const r = await dialog.showOpenDialog(s
 ipcMain.on('proj:new', () => { projPath = null; });
 ipcMain.on('settings:close', () => { if (setWin) setWin.close(); });
 ipcMain.on('shell:logs', () => shell.showItemInFolder(logPath()) || shell.openPath(path.dirname(logPath())));
-ipcMain.handle('models:clear', () => { try { fs.rmSync(path.join(app.getPath('userData'), 'models'), { recursive: true, force: true }); return true; } catch (e) { return false; } });
+ipcMain.handle('models:clear', () => { try { fs.rmSync(modelsDir(), { recursive: true, force: true }); return true; } catch (e) { return false; } });
 ipcMain.on('app:about', () => dialog.showMessageBox(win, { type: 'info', title: 'À propos', message: 'KORA Studio ' + app.getVersion(), detail: 'Éditeur vidéo, image et audio.\nMoteur : FFmpeg. Sous-titres : Whisper (hors ligne).\n\nDossier des données : ' + app.getPath('userData') }));
 
 function openSettings() {
